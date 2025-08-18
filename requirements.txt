@@ -1,0 +1,23 @@
+# Core web scraping
+scrapy>=2.11.0
+selenium>=4.15.0
+
+# WebDriver management
+webdriver-manager>=4.0.0
+
+# HTML parsing
+lxml>=4.9.3
+beautifulsoup4>=4.12.2
+
+# HTTP requests
+requests>=2.31.0
+
+# Image processing
+Pillow>=10.0.0
+
+# Timezone handling
+pytz>=2023.3
+
+# Optional: For better development experience
+ipython>=8.0.0
+jupyter>=1.0.0 
