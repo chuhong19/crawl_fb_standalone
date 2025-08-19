@@ -492,12 +492,16 @@ def screenshot_full_page(driver, save_dir="screenshots"):
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
 
+        # Dismiss any popup/modal first
+        print("🔍 Checking for popups to dismiss...")
+        dismiss_facebook_popup(driver)
+
         # Scroll to top first
         driver.execute_script("window.scrollTo(0, 0);")
 
-        # Wait a moment
+        # Wait a moment for content to settle
         import time
-        time.sleep(1)
+        time.sleep(2)
 
         # Take full page screenshot
         timestamp = int(time.time())
@@ -571,6 +575,82 @@ def screenshot_articles_on_page(driver, save_dir="screenshots"):
     except Exception as e:
         print(f"❌ Error in screenshot_articles_on_page: {e}")
         return []
+
+
+def dismiss_facebook_popup(driver):
+    """
+    Dismiss Facebook login popup/modal that blocks content
+
+    Args:
+        driver: Selenium WebDriver instance
+
+    Returns:
+        bool: True if popup was found and dismissed, False otherwise
+    """
+    try:
+        # Wait a moment for popup to appear
+        import time
+        time.sleep(2)
+
+        # Multiple selectors for close button on Facebook login popup
+        close_selectors = [
+            # X button in top right corner
+            "//div[@aria-label='Close']",
+            "//button[@aria-label='Close']",
+            "[aria-label='Close']",
+            # Close button variations
+            "//div[contains(@class, 'close')]",
+            "//button[contains(@class, 'close')]",
+            # X symbol
+            "//div[text()='×']",
+            "//span[text()='×']",
+            # Skip or dismiss options
+            "//a[contains(text(), 'Not Now')]",
+            "//button[contains(text(), 'Not Now')]",
+            "//div[contains(text(), 'Skip')]",
+            "//button[contains(text(), 'Skip')]",
+        ]
+
+        for selector in close_selectors:
+            try:
+                if selector.startswith("//"):
+                    # XPath selector
+                    elements = driver.find_elements(By.XPATH, selector)
+                else:
+                    # CSS selector
+                    elements = driver.find_elements(By.CSS_SELECTOR, selector)
+
+                if elements:
+                    # Click the first visible element
+                    for element in elements:
+                        if element.is_displayed() and element.is_enabled():
+                            element.click()
+                            print(
+                                f"✅ Dismissed popup using selector: {selector}")
+                            time.sleep(1)  # Wait for popup to close
+                            return True
+            except Exception as e:
+                # Continue trying other selectors
+                continue
+
+        # Try pressing ESC key as fallback
+        try:
+            from selenium.webdriver.common.keys import Keys
+            from selenium.webdriver.common.action_chains import ActionChains
+
+            ActionChains(driver).send_keys(Keys.ESCAPE).perform()
+            print("✅ Dismissed popup using ESC key")
+            time.sleep(1)
+            return True
+        except Exception:
+            pass
+
+        print("ℹ️  No popup found to dismiss")
+        return False
+
+    except Exception as e:
+        print(f"❌ Error dismissing popup: {e}")
+        return False
 
 
 if __name__ == "__main__":
