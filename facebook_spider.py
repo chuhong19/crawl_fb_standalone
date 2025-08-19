@@ -20,6 +20,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from mock_models import MockFacebook
 from time_parser import parse_relative_time
 from selenium_config import get_selenium_settings, get_chrome_options
+from media_extractor import extract_images_from_article, extract_videos_from_article
 
 
 logging.basicConfig(level=logging.WARNING, format='%(levelname)s: %(message)s')
@@ -152,8 +153,12 @@ class FacebookHashtagSpider(scrapy.Spider):
                 actual_timestamp = datetime.now(timezone.utc)
 
         if article_url and description:
+            # Extract media from article
+            images = extract_images_from_article(article)
+            videos = extract_videos_from_article(article)
+
             print(
-                f"✓ Crawled: {self.keyword} | Content: {description[:50]}...")
+                f"✓ Crawled: {self.keyword} | Content: {description[:50]}... | Images: {len(images)} | Videos: {len(videos)}")
 
             if self.upload_callback:
                 self.upload_callback({
@@ -161,6 +166,8 @@ class FacebookHashtagSpider(scrapy.Spider):
                     MockFacebook.feed_url.name: article_url,
                     MockFacebook.publish_date.name: actual_timestamp,
                     MockFacebook.content.name: description,
+                    MockFacebook.images.name: images,
+                    MockFacebook.videos.name: videos,
                 })
 
 
@@ -210,6 +217,17 @@ def test_callback(data):
     print(f"📅 PUBLISH_DATE: {data.get('publish_date', 'N/A')}")
     content = data.get('content', 'N/A')
     print(f"📝 CONTENT: {content}")
+
+    images = data.get('images', [])
+    videos = data.get('videos', [])
+    print(f"🖼️  IMAGES ({len(images)}):")
+    for i, img in enumerate(images, 1):
+        print(f"  {i}. {img}")
+
+    print(f"🎥 VIDEOS ({len(videos)}):")
+    for i, video in enumerate(videos, 1):
+        print(f"  {i}. {video}")
+
     print("=" * 80)
 
 
