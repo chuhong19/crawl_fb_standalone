@@ -64,6 +64,19 @@ class FacebookPageSpider(scrapy.Spider):
     description_xpath = (
         ".//div[@data-ad-comet-preview='message']//span[@dir='auto']//text()"
     )
+    # Additional XPath selectors for Facebook pages (different structure)
+    page_content_selectors = [
+        # Primary selector (works for hashtags)
+        ".//div[@data-ad-comet-preview='message']//span[@dir='auto']//text()",
+        # Page post content
+        ".//div[contains(@class, 'userContent')]//span//text()",
+        ".//div[contains(@class, 'text_exposed_root')]//text()",
+        # General content in posts
+        ".//span[@dir='auto']//text()",
+        ".//div[contains(@style, 'text-align')]//text()",
+        # Fallback - any text in the article
+        ".//text()[normalize-space() and string-length() > 10]"
+    ]
     article_header_xpath = (
         ".//div//span/a[@aria-label!='확대하기' and @role='link']"
     )
@@ -86,6 +99,13 @@ class FacebookPageSpider(scrapy.Spider):
 
     def parse(self, response: HtmlResponse) -> dict:
         articles = response.xpath(self.articles_xpath)
+
+        if len(articles) == 0:
+            page_text = response.text
+            if any(indicator in page_text for indicator in ["You must log in to continue", "Log Into Facebook"]):
+                print("⚠️  Page requires login to view content")
+            else:
+                print("⚠️  No articles found on this page")
 
         for article in articles:
             if fb_article := self.parse_article(article):
@@ -110,13 +130,22 @@ class FacebookPageSpider(scrapy.Spider):
                 article_url = urls[0]
                 break
 
+        if not article_url:
+            return None
+
         if article_url and article_url.startswith('/'):
             article_url = f"https://www.facebook.com{article_url}"
 
         article_header = article.xpath(self.article_header_xpath)
         publish_date = article_header.xpath("./@aria-label").get()
-        descriptions = article.xpath(self.description_xpath).getall()
-        description = " ".join(descriptions).strip()
+
+        # Try multiple content selectors for different page structures
+        description = ""
+        for selector in self.page_content_selectors:
+            descriptions = article.xpath(selector).getall()
+            if descriptions:
+                description = " ".join(descriptions).strip()
+                break
 
         actual_timestamp = None
         if article_url and description:
