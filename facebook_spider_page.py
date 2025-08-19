@@ -20,7 +20,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from mock_models import MockFacebook
 from time_parser import parse_relative_time
 from selenium_config import get_selenium_settings, get_chrome_options
-from media_extractor import extract_images_from_article, extract_videos_from_article
+from media_extractor import extract_images_from_article
 
 
 logging.basicConfig(level=logging.WARNING, format='%(levelname)s: %(message)s')
@@ -107,12 +107,23 @@ class FacebookPageSpider(scrapy.Spider):
             else:
                 print("⚠️  No articles found on this page")
 
+        # Take ONE screenshot of the entire Facebook page
+        driver = response.request.meta.get('driver')
+        page_screenshot_path = None
+        if driver:
+            print("📸 Taking full page screenshot...")
+            from media_extractor import screenshot_full_page
+            page_screenshot_path = screenshot_full_page(
+                driver, save_dir="screenshots")
+            print(f"📊 Captured full page screenshot: {page_screenshot_path}")
+
         for article in articles:
-            if fb_article := self.parse_article(article):
+            # All articles will use the same full page screenshot
+            if fb_article := self.parse_article(article, response, page_screenshot_path):
                 self.upload_callback(fb_article)
         time.sleep(10)
 
-    def parse_article(self, article):
+    def parse_article(self, article, response, screenshot_path=None):
         url_selectors = [
             ".//div//span/a[@aria-label!='확대하기' and @role='link']/@href",
             ".//a[contains(@href, '/posts/')]/@href",
@@ -182,12 +193,18 @@ class FacebookPageSpider(scrapy.Spider):
                 actual_timestamp = datetime.now(timezone.utc)
 
         if article_url and description:
-            # Extract media from article
-            images = extract_images_from_article(article)
-            videos = extract_videos_from_article(article)
+            # Use screenshot as primary "image" instead of extracting individual images
+            if screenshot_path:
+                # Screenshot contains all visual content
+                images = [screenshot_path]
+                print(f"📸 Using screenshot: {screenshot_path}")
+            else:
+                # Fallback to traditional image extraction if no screenshot
+                images = extract_images_from_article(article)
+                print(f"🔍 Fallback: extracted {len(images)} individual images")
 
             print(
-                f"✓ Crawled: {self.pagename} | Content: {description[:50]}... | Images: {len(images)} | Videos: {len(videos)}")
+                f"✓ Crawled: {self.pagename} | Content: {description[:50]}... | Images: {len(images)}")
 
             if self.upload_callback:
                 self.upload_callback({
@@ -196,7 +213,6 @@ class FacebookPageSpider(scrapy.Spider):
                     MockFacebook.publish_date.name: actual_timestamp,
                     MockFacebook.content.name: description,
                     MockFacebook.images.name: images,
-                    MockFacebook.videos.name: videos,
                 })
 
 
@@ -225,12 +241,15 @@ class SimpleSeleniumMiddleware:
         time.sleep(3)
 
         body = self.driver.page_source.encode('utf-8')
-        return HtmlResponse(
+        response = HtmlResponse(
             url=request.url,
             body=body,
             encoding='utf-8',
             request=request
         )
+        # Store driver in request meta for access in parse methods
+        request.meta['driver'] = self.driver
+        return response
 
     def spider_closed(self, spider):
         if self.driver:
@@ -248,14 +267,9 @@ def test_callback_page(data):
     print(f"📝 CONTENT: {content}")
 
     images = data.get('images', [])
-    videos = data.get('videos', [])
     print(f"🖼️  IMAGES ({len(images)}):")
     for i, img in enumerate(images, 1):
         print(f"  {i}. {img}")
-
-    print(f"🎥 VIDEOS ({len(videos)}):")
-    for i, video in enumerate(videos, 1):
-        print(f"  {i}. {video}")
 
     print("=" * 80)
 

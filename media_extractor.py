@@ -2,6 +2,14 @@
 
 import re
 from urllib.parse import urljoin, urlparse
+import requests
+import os
+import hashlib
+import base64
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException, WebDriverException
 
 
 def extract_images_from_article(article):
@@ -33,6 +41,9 @@ def extract_images_from_article(article):
         ".//div[contains(@class, 'photoContainer')]//img/@data-src",
         # Background images in content (not UI)
         ".//div[contains(@class, 'scaledImageFitWidth')]//*[contains(@style, 'background-image')]/@style",
+        # Broader fallback selectors
+        ".//img/@src",
+        ".//img/@data-src",
     ]
 
     for selector in image_selectors:
@@ -124,7 +135,7 @@ def clean_image_url(img_url):
     if not img_url:
         return None
 
-    # Extract URL from CSS background-image style
+        # Extract URL from CSS background-image style
     if 'background-image' in img_url:
         bg_match = re.search(r'url\(["\']?([^"\']+)["\']?\)', img_url)
         if bg_match:
@@ -132,10 +143,18 @@ def clean_image_url(img_url):
         else:
             return None
 
-    # Remove Facebook's image processing parameters
-    img_url = re.sub(r'[?&]_nc_.*', '', img_url)
-    img_url = re.sub(r'[?&]ccb=.*', '', img_url)
-    img_url = re.sub(r'[?&]_nc_ht=.*', '', img_url)
+    # Only remove specific tracking parameters, keep image processing ones like stp=
+    # DON'T remove stp (image size/processing), only remove tracking
+    img_url = re.sub(r'[?&]_nc_cat=[^&]*', '', img_url)
+    img_url = re.sub(r'[?&]_nc_oc=[^&]*', '', img_url)
+    img_url = re.sub(r'[?&]_nc_ht=[^&]*', '', img_url)
+    img_url = re.sub(r'[?&]ccb=[^&]*', '', img_url)
+    img_url = re.sub(r'[?&]oh=[^&]*', '', img_url)
+    img_url = re.sub(r'[?&]oe=[^&]*', '', img_url)
+
+    # Clean up multiple & and trailing ?
+    img_url = re.sub(r'&+', '&', img_url)
+    img_url = re.sub(r'[?&]$', '', img_url)
 
     # Convert relative URLs to absolute
     if img_url.startswith('//'):
@@ -143,7 +162,7 @@ def clean_image_url(img_url):
     elif img_url.startswith('/'):
         img_url = 'https://www.facebook.com' + img_url
 
-    return img_url.strip()
+        return img_url.strip()
 
 
 def clean_video_url(video_url):
@@ -239,6 +258,7 @@ def is_valid_image_url(url):
         'sprites/',
         'icons/',
         'emoji/',
+        '/images/emoji.php',
         # Profile picture placeholders
         'profile_pic_header',
         'default_profile',
@@ -255,7 +275,8 @@ def is_valid_image_url(url):
     # Must be from Facebook content domains (not static UI domains)
     valid_domains = [
         'scontent.com',
-        'scontent-',  # scontent-xxx.xx.fbcdn.net
+        'scontent-',       # scontent-xxx.xx.fbcdn.net
+        'scontent.',       # scontent.fsgn2-*.fna.fbcdn.net
         'cdninstagram.com',
     ]
 
@@ -310,6 +331,246 @@ def is_valid_video_url(url):
     has_valid_domain = any(domain in url for domain in valid_domains)
 
     return has_video_indicator and has_valid_domain
+
+
+def download_image_during_crawl(driver, img_url, save_dir="downloaded_images"):
+    """
+    Download image using the same browser session and save locally
+
+    Args:
+        driver: Selenium WebDriver instance (same session)
+        img_url: Facebook image URL
+        save_dir: Directory to save images
+
+    Returns:
+        str: Local file path or None if failed
+    """
+    try:
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+
+        # Use selenium to get image with same session/cookies
+        driver.get(img_url)
+
+        # Get image content from page source or use requests with driver's cookies
+        cookies = driver.get_cookies()
+        session = requests.Session()
+
+        # Transfer cookies from selenium to requests
+        for cookie in cookies:
+            session.cookies.set(
+                cookie['name'], cookie['value'], domain=cookie.get('domain'))
+
+        # Set same headers as browser
+        headers = {
+            'User-Agent': driver.execute_script("return navigator.userAgent;"),
+            'Referer': 'https://www.facebook.com/',
+            'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
+        }
+
+        response = session.get(img_url, headers=headers, stream=True)
+
+        if response.status_code == 200:
+            # Generate filename from URL hash
+            url_hash = hashlib.md5(img_url.encode()).hexdigest()[:12]
+            filename = f"fb_image_{url_hash}.jpg"
+            filepath = os.path.join(save_dir, filename)
+
+            with open(filepath, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+
+            return filepath
+        else:
+            print(f"❌ Failed to download image: HTTP {response.status_code}")
+            return None
+
+    except Exception as e:
+        print(f"❌ Error downloading image: {e}")
+        return None
+
+
+def extract_and_download_images_from_article(article, driver, save_dir="downloaded_images"):
+    """
+    Extract image URLs and download them during crawl
+
+    Args:
+        article: Scrapy selector object for article
+        driver: Selenium WebDriver instance
+        save_dir: Directory to save images
+
+    Returns:
+        list: List of local file paths
+    """
+    local_paths = []
+
+    # Get image URLs using existing logic
+    image_urls = extract_images_from_article(article)
+
+    print(f"🔽 Downloading {len(image_urls)} images...")
+
+    for i, img_url in enumerate(image_urls, 1):
+        print(f"  {i}/{len(image_urls)}: Downloading...")
+        local_path = download_image_during_crawl(driver, img_url, save_dir)
+        if local_path:
+            local_paths.append(local_path)
+            print(f"    ✅ Saved: {local_path}")
+        else:
+            print(f"    ❌ Failed: {img_url[:50]}...")
+
+    return local_paths
+
+
+def screenshot_article(driver, article_element, save_dir="screenshots", article_index=0):
+    """
+    Take screenshot of specific article element
+
+    Args:
+        driver: Selenium WebDriver instance
+        article_element: Scrapy selector (we need to find corresponding WebElement)
+        save_dir: Directory to save screenshots
+        article_index: Index for unique filename
+
+    Returns:
+        str: Local screenshot file path or None if failed
+    """
+    try:
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+
+        # Scroll article into view for better screenshot
+        # Since we have Scrapy selector, we need to find the corresponding WebElement
+        # Get all article elements and use index to match
+        web_articles = driver.find_elements(By.XPATH, "//div[@role='article']")
+
+        if article_index < len(web_articles):
+            article_web_element = web_articles[article_index]
+
+            # Scroll element into view
+            driver.execute_script(
+                "arguments[0].scrollIntoView({block: 'center'});", article_web_element)
+
+            # Wait a moment for content to load
+            import time
+            time.sleep(1)
+
+            # Take screenshot of the specific element
+            screenshot_data = article_web_element.screenshot_as_png
+
+            # Generate filename
+            timestamp = int(time.time())
+            filename = f"article_{article_index}_{timestamp}.png"
+            filepath = os.path.join(save_dir, filename)
+
+            # Save screenshot
+            with open(filepath, 'wb') as f:
+                f.write(screenshot_data)
+
+            print(f"📸 Screenshot saved: {filepath}")
+            return filepath
+        else:
+            print(f"❌ Article index {article_index} not found in WebDriver")
+            return None
+
+    except Exception as e:
+        print(f"❌ Error taking screenshot: {e}")
+        return None
+
+
+def screenshot_full_page(driver, save_dir="screenshots"):
+    """
+    Take full page screenshot
+
+    Args:
+        driver: Selenium WebDriver instance
+        save_dir: Directory to save screenshots
+
+    Returns:
+        str: Local screenshot file path or None if failed
+    """
+    try:
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+
+        # Scroll to top first
+        driver.execute_script("window.scrollTo(0, 0);")
+
+        # Wait a moment
+        import time
+        time.sleep(1)
+
+        # Take full page screenshot
+        timestamp = int(time.time())
+        filename = f"full_page_{timestamp}.png"
+        filepath = os.path.join(save_dir, filename)
+
+        # Full page screenshot
+        driver.save_screenshot(filepath)
+
+        print(f"📸 Full page screenshot saved: {filepath}")
+        return filepath
+
+    except Exception as e:
+        print(f"❌ Error taking full page screenshot: {e}")
+        return None
+
+
+def screenshot_articles_on_page(driver, save_dir="screenshots"):
+    """
+    Take screenshots of all articles on current page
+
+    Args:
+        driver: Selenium WebDriver instance
+        save_dir: Directory to save screenshots
+
+    Returns:
+        list: List of screenshot file paths
+    """
+    screenshots = []
+
+    try:
+        # Find all article elements
+        web_articles = driver.find_elements(By.XPATH, "//div[@role='article']")
+
+        print(f"📸 Found {len(web_articles)} articles to screenshot")
+
+        for i, article_element in enumerate(web_articles):
+            try:
+                # Scroll article into view
+                driver.execute_script(
+                    "arguments[0].scrollIntoView({block: 'center'});", article_element)
+
+                # Wait for content to load
+                import time
+                time.sleep(1)
+
+                # Take screenshot
+                screenshot_data = article_element.screenshot_as_png
+
+                # Generate filename
+                timestamp = int(time.time())
+                filename = f"article_{i}_{timestamp}.png"
+                filepath = os.path.join(save_dir, filename)
+
+                if not os.path.exists(save_dir):
+                    os.makedirs(save_dir)
+
+                # Save screenshot
+                with open(filepath, 'wb') as f:
+                    f.write(screenshot_data)
+
+                screenshots.append(filepath)
+                print(f"  📸 Article {i+1}: {filepath}")
+
+            except Exception as e:
+                print(f"  ❌ Failed to screenshot article {i}: {e}")
+                continue
+
+        return screenshots
+
+    except Exception as e:
+        print(f"❌ Error in screenshot_articles_on_page: {e}")
+        return []
 
 
 if __name__ == "__main__":

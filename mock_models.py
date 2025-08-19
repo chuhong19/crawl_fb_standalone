@@ -10,17 +10,15 @@ class MockFacebook:
     publish_date = Field("publish_date")
     content = Field("content")
     images = Field("images")
-    videos = Field("videos")
 
 
 class FacebookData:
-    def __init__(self, keyword=None, url=None, publish_date=None, content=None, images=None, videos=None):
+    def __init__(self, keyword=None, url=None, publish_date=None, content=None, images=None):
         self.keyword = keyword
         self.url = url
         self.publish_date = publish_date
         self.content = content
         self.images = images or []
-        self.videos = videos or []
 
     def to_dict(self):
         return {
@@ -29,7 +27,6 @@ class FacebookData:
             MockFacebook.publish_date.name: self.publish_date,
             MockFacebook.content.name: self.content,
             MockFacebook.images.name: self.images,
-            MockFacebook.videos.name: self.videos,
         }
 
     def __repr__(self):
@@ -37,8 +34,7 @@ class FacebookData:
                 f"url='{self.url[:50] if self.url else None}...', "
                 f"publish_date='{self.publish_date}', "
                 f"content='{self.content[:50] if self.content else None}...', "
-                f"images={len(self.images) if self.images else 0}, "
-                f"videos={len(self.videos) if self.videos else 0})")
+                f"images={len(self.images) if self.images else 0})")
 
 
 if __name__ == "__main__":
