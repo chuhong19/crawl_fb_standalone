@@ -4,6 +4,7 @@ Standalone Facebook Hashtag Spider
 Không phụ thuộc vào bigdata_* modules gốc
 """
 
+import os
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.options import Options
@@ -37,18 +38,30 @@ class MockFacebook:
 
 
 # ========== LOGGER SETUP ==========
-# Giảm log level và đơn giản hóa format
-logging.basicConfig(
-    level=logging.WARNING,  # Chỉ hiện WARNING và ERROR
-    format='%(levelname)s: %(message)s'  # Format đơn giản hơn
-)
-logger = logging.getLogger(__name__)
+# Tắt hoàn toàn tất cả logging
+os.environ['WDM_LOG_LEVEL'] = '0'  # Tắt WebDriver Manager logs
 
-# Tắt log của thư viện khác
-logging.getLogger('selenium').setLevel(logging.ERROR)
-logging.getLogger('urllib3').setLevel(logging.ERROR)
-logging.getLogger('webdriver_manager').setLevel(logging.ERROR)
-logging.getLogger('scrapy').setLevel(logging.ERROR)
+# Tắt tất cả logging
+logging.disable(logging.CRITICAL)
+
+# Tắt cụ thể từng thư viện
+logging.getLogger().setLevel(logging.CRITICAL)
+logging.getLogger('selenium').disabled = True
+logging.getLogger('urllib3').disabled = True
+logging.getLogger('webdriver_manager').disabled = True
+logging.getLogger('scrapy').disabled = True
+logging.getLogger('twisted').disabled = True
+logging.getLogger('scrapy.core.engine').disabled = True
+logging.getLogger('scrapy.crawler').disabled = True
+logging.getLogger('scrapy.extensions').disabled = True
+logging.getLogger('scrapy.middleware').disabled = True
+logging.getLogger('scrapy.utils').disabled = True
+
+# Tắt tất cả handlers
+for handler in logging.root.handlers[:]:
+    logging.root.removeHandler(handler)
+
+logger = logging.getLogger(__name__)
 
 
 # ========== SELENIUM CALLBACK ==========
@@ -231,9 +244,13 @@ def get_selenium_settings():
         "AUTOTHROTTLE_MAX_DELAY": 10,
         "AUTOTHROTTLE_TARGET_CONCURRENCY": 1.0,
         "HEADLESS": True,
-        # Tắt tất cả logs của Scrapy
+        # Tắt hoàn toàn logging của Scrapy
         "LOG_ENABLED": False,
         "LOG_LEVEL": "CRITICAL",
+        "LOG_STDOUT": False,
+        "TELNETCONSOLE_ENABLED": False,
+        "STATS_CLASS": None,  # Tắt stats
+        "EXTENSIONS": {},  # Tắt tất cả extensions
     }
 
 
@@ -254,11 +271,20 @@ class SimpleSeleniumMiddleware:
             chrome_options.add_argument('--disable-dev-shm-usage')
             chrome_options.add_argument('--disable-gpu')
             chrome_options.add_argument('--window-size=1920,1080')
-            # Add headless mode
             chrome_options.add_argument('--headless')
+            # Tắt logs của Chrome
+            chrome_options.add_argument('--log-level=3')
+            chrome_options.add_argument('--silent')
+            chrome_options.add_argument('--disable-logging')
+            chrome_options.add_argument('--disable-extensions')
+            chrome_options.add_experimental_option(
+                'excludeSwitches', ['enable-logging'])
+            chrome_options.add_experimental_option(
+                'useAutomationExtension', False)
 
-            # Use webdriver-manager to handle driver
-            service = Service(ChromeDriverManager().install())
+            # Use webdriver-manager với logging tắt
+            service = Service(ChromeDriverManager(log_level=0).install())
+            service.log_path = os.devnull  # Redirect logs to devnull
             self.driver = webdriver.Chrome(
                 service=service, options=chrome_options)
 
