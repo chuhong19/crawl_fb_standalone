@@ -90,9 +90,9 @@ class FacebookHashtagSpider(scrapy.Spider):
         page_screenshot_path = None
         if driver:
             print("📸 Taking full page screenshot...")
-            from media_extractor import screenshot_full_page
+            from .media_extractor import screenshot_full_page
             page_screenshot_path = screenshot_full_page(
-                driver, save_dir="screenshots")
+                driver, save_dir="downloads/facebook")
             print(f"📊 Captured full page screenshot: {page_screenshot_path}")
 
         articles = response.xpath(self.articles_xpath)

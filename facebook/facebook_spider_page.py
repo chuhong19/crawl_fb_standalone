@@ -20,7 +20,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from .mock_models import MockFacebook
 from .time_parser import parse_relative_time
 from .selenium_config import get_selenium_settings, get_chrome_options
-from media_extractor import extract_images_from_article
+from .media_extractor import extract_images_from_article
 
 
 logging.basicConfig(level=logging.WARNING, format='%(levelname)s: %(message)s')
