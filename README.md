@@ -50,6 +50,9 @@ Sửa trong file `facebook_spider.py`:
 ## Tính năng
 
 - ✅ Crawl bài viết từ Facebook hashtag
+- ✅ Crawl bài viết từ Tiktok profile và hashtag
+- ✅ Crawl bài viết từ Twitter profile và hashtag
+- ✅ Crawl bài viết từ Telegram channel
 - ✅ Xử lý popup cookies tự động
 - ✅ Hỗ trợ tiếng Hàn và tiếng Anh
 - ✅ Tự động quản lý ChromeDriver
@@ -64,14 +67,25 @@ Spider thu thập:
 - **URL**: Link bài viết
 - **Publish Date**: Ngày đăng (nếu có)
 - **Content**: Nội dung bài viết
+- **Media**: Ảnh và video của bài viết (nếu có)
 
 ## Cấu trúc files
 
 ```
-standalone_facebook_spider/
-├── facebook_spider.py      # Spider chính
+standalone_facebook_spider
 ├── requirements.txt        # Dependencies
-└── README.md              # Hướng dẫn này
+├── README.md              # Hướng dẫn này
+├── facebook/
+|   └── facebook_spider.py      # Spider của facebook
+|
+├── twitter/
+|   └── twitter_spider.py      # Spider của twitter
+|
+├── telegram/
+|   └── telegram_spider.py      # Spider của telegram
+|
+└── tiktok/
+    └── tiktok_spider.py      # Spider của tiktok
 ```
 
 ## Customization
@@ -97,9 +111,32 @@ def custom_callback(data):
     with open('facebook_data.json', 'a') as f:
         json.dump(data, f)
         f.write('\n')
+```
 
 # Sử dụng
-run_facebook_spider_with_callback(keyword="test", callback=custom_callback)
+
+- facebook
+```
+	python main.py facebook --keyword <keyword cần tìm>
+```
+
+- twitter
+```
+	python main.py twitter --profile <tên profile> --limit <giới hạn tin nhắn>
+
+	python main.py twitter --hashtag <hashtag cần tìm> --limit <giới hạn tin nhắn>
+```
+
+- telegram
+```
+	python main.py telegram --channel <tên channel> --limit <giới hạn tin nhắn>
+```
+
+- tiktok
+```
+	python main.py tiktok --profile <tên profile> --limit <giới hạn tin nhắn>
+
+	python main.py tiktok --hashtag <hashtag cần tìm> --limit <giới hạn tin nhắn>
 ```
 
 ### Thêm scroll để lấy nhiều posts
@@ -145,6 +182,8 @@ rmdir /s %USERPROFILE%\.wdm  # Windows
 - Số lượng posts thu thập phụ thuộc vào Facebook's infinite scroll
 - Cần internet connection
 - Chrome browser dependency
+- Twitter giới hạn số API sử dụng
+- Telegram cần nhập authen code mỗi lần dùng
 
 ## So sánh với bản gốc
 
