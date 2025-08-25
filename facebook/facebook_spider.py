@@ -17,10 +17,10 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
-from mock_models import MockFacebook
-from time_parser import parse_relative_time
-from selenium_config import get_selenium_settings, get_chrome_options
-from media_extractor import extract_images_from_article
+from .mock_models import MockFacebook
+from .time_parser import parse_relative_time
+from .selenium_config import get_selenium_settings, get_chrome_options
+from .media_extractor import extract_images_from_article
 
 
 logging.basicConfig(level=logging.WARNING, format='%(levelname)s: %(message)s')
@@ -245,33 +245,33 @@ def test_callback(data):
     print("=" * 80)
 
 
-def run_facebook_spider(keyword="test"):
-    print(f"🚀 Starting crawl for: {keyword}")
+# =========================================
+# Runner class for Fire
+# =========================================
+class FacebookCrawler:
+    def crawl(self, keyword="test"):
+        """Crawl Facebook posts by hashtag keyword"""
+        logging.info(f"🚀 Starting crawl for: {keyword}")
 
-    start_urls = [f"https://www.facebook.com/hashtag/{keyword}"]
-    settings = get_selenium_settings()
+        start_urls = [f"https://www.facebook.com/hashtag/{keyword}"]
+        settings = get_selenium_settings()
 
-    try:
-        process = CrawlerProcess(settings)
-        process.crawl(
-            FacebookHashtagSpider,
-            keyword=keyword,
-            upload_callback=test_callback,
-            start_urls=start_urls
-        )
-        process.start()
-        print("✅ Crawl completed!")
-    except Exception as e:
-        print(f"❌ Error: {e}")
+        try:
+            process = CrawlerProcess(settings)
+            process.crawl(
+                FacebookHashtagSpider,
+                keyword=keyword,
+                upload_callback=test_callback,
+                start_urls=start_urls
+            )
+            process.start()
+            logging.info("✅ Crawl completed!")
+        except Exception as e:
+            logging.error(f"❌ Error: {e}")
 
-
+# =========================================
+# Fire entrypoint
+# =========================================
 if __name__ == "__main__":
-    import sys
-
-    keyword = "test"
-    if len(sys.argv) > 1:
-        keyword = sys.argv[1]
-
-    print(f"🔍 Facebook Spider - Keyword: {keyword}")
-    time.sleep(1)
-    run_facebook_spider(keyword)
+    import fire
+    fire.Fire(FacebookCrawler)
