@@ -112,7 +112,7 @@ class FacebookPageSpider(scrapy.Spider):
         page_screenshot_path = None
         if driver:
             print("📸 Taking full page screenshot...")
-            from media_extractor import screenshot_full_page
+            from .media_extractor import screenshot_full_page
             page_screenshot_path = screenshot_full_page(
                 driver, save_dir="screenshots")
             print(f"📊 Captured full page screenshot: {page_screenshot_path}")
@@ -577,6 +577,31 @@ def test_callback_page(data):
         print(f"  {i}. {img}")
 
     print("=" * 80)
+
+
+# =========================================
+# Runner class for Fire
+# =========================================
+class FacebookPageCrawler:
+    def crawl(self, pagename="test"):
+        """Crawl Facebook page posts"""
+        logging.info(f"🚀 Starting page crawl for: {pagename}")
+
+        start_urls = [f"https://www.facebook.com/{pagename}"]
+        settings = get_selenium_settings()
+
+        try:
+            process = CrawlerProcess(settings)
+            process.crawl(
+                FacebookPageSpider,
+                pagename=pagename,
+                upload_callback=test_callback_page,
+                start_urls=start_urls
+            )
+            process.start()
+            logging.info("✅ Page crawl completed!")
+        except Exception as e:
+            logging.error(f"❌ Error: {e}")
 
 
 def run_facebook_page_spider(pagename="test"):

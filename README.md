@@ -24,29 +24,6 @@ pip install -r requirements.txt
 - Đảm bảo có Chrome browser được cài đặt
 - Spider sẽ tự động download ChromeDriver qua `webdriver-manager`
 
-## Cách sử dụng
-
-### Chạy với keyword mặc định
-
-```bash
-python facebook_spider.py
-```
-
-### Chạy với keyword tùy chỉnh
-
-```bash
-python facebook_spider.py vietnam
-python facebook_spider.py "artificial intelligence"
-```
-
-### Chạy headless (ẩn browser)
-
-Sửa trong file `facebook_spider.py`:
-
-```python
-"HEADLESS": True,  # Thay False thành True
-```
-
 ## Tính năng
 
 - ✅ Crawl bài viết từ Facebook hashtag
@@ -116,11 +93,13 @@ def custom_callback(data):
 # Sử dụng
 
 - facebook
+
 ```
 	python main.py facebook --keyword <keyword cần tìm>
 ```
 
 - twitter
+
 ```
 	python main.py twitter --profile <tên profile> --limit <giới hạn tin nhắn>
 
@@ -128,11 +107,13 @@ def custom_callback(data):
 ```
 
 - telegram
+
 ```
 	python main.py telegram --channel <tên channel> --limit <giới hạn tin nhắn>
 ```
 
 - tiktok
+
 ```
 	python main.py tiktok --profile <tên profile> --limit <giới hạn tin nhắn>
 
