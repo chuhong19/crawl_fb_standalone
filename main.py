@@ -10,16 +10,16 @@ class SpiderCrawler:
         """Crawl Twitter"""
         TwitterCrawler().crawl(user=user, hashtag=hashtag, limit=limit)
 
-    def tiktok(self, profile=None, hashtag=None, limit=5):
+    def tiktok(self, profile=None, hashtag=None, limit=None):
         """Crawl TikTok"""
         TikTokCrawler().crawl(profile=profile, hashtag=hashtag, limit=limit)
 
-    def telegram(self, channel=None, limit=5):
-        """Crawl TikTok"""
+    def telegram(self, channel=None, limit=None):
+        """Crawl Telegram"""
         TelegramCrawler().crawl(channel=channel, limit=limit)
 
     def facebook(self, keyword=None):
-        """Crawl TikTok"""
+        """Crawl Facebook"""
         FacebookCrawler().crawl(keyword=keyword)
 
 
