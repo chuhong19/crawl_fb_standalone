@@ -20,7 +20,7 @@ OUTPUT_FOLDER = "downloads/telegram"
 
 
 class TelegramCrawler:
-    async def _crawl_async(self, channel: str, limit: int = 50):
+    async def _crawl_async(self, channel: str, limit: int = None):
         """Async crawler for Telegram channel messages"""
         client = TelegramClient(None, api_id, api_hash)
         await client.start(phone_number)
@@ -41,12 +41,15 @@ class TelegramCrawler:
 
         messages_data = []
 
-        async for message in client.iter_messages(channel, limit=limit):
-            if message.id in existing_ids:
-                logging.info(f"⏭️ Skipping duplicate message ID={message.id}")
-                continue
+        def save_progress():
+            all_messages = existing_messages + messages_data
+            with open(JSON_FILENAME, "w", encoding="utf-8") as f:
+                json.dump(all_messages, f, indent=2, ensure_ascii=False)
+            logging.info(f"💾 Saved {len(all_messages)} messages total")
 
-            logging.info(f"Fetched new message ID={message.id} | text={(message.text or '')[:50]}")
+        async def process_message(message):
+            if message.id in existing_ids:
+                return
 
             msg_dict = {
                 "id": message.id,
@@ -59,31 +62,62 @@ class TelegramCrawler:
 
             if isinstance(message.media, MessageMediaPhoto):
                 msg_dict["media_type"] = "photo"
-                file_path = await client.download_media(message, file=channel_media_folder)
+                file_path = os.path.join(channel_media_folder, f"{message.id}.jpg")
+                await client.download_media(message, file=file_path)
                 msg_dict["media_path"] = file_path
-                logging.info(f"Downloaded photo → {file_path}")
 
             elif isinstance(message.media, MessageMediaDocument):
+                # Try to detect extension from mime_type
+                ext = ".bin"
+                if message.media.document and message.media.document.mime_type:
+                    mime = message.media.document.mime_type
+                    if "video" in mime:
+                        ext = ".mp4"
+                    elif "png" in mime:
+                        ext = ".png"
+                    elif "jpg" in mime or "jpeg" in mime:
+                        ext = ".jpg"
+                    elif "gif" in mime:
+                        ext = ".gif"
+                    elif "pdf" in mime:
+                        ext = ".pdf"
+
                 msg_dict["media_type"] = "document"
-                file_path = await client.download_media(message, file=channel_media_folder)
+                file_path = os.path.join(channel_media_folder, f"{message.id}{ext}")
+                await client.download_media(message, file=file_path)
                 msg_dict["media_path"] = file_path
-                logging.info(f"Downloaded document → {file_path}")
 
             messages_data.append(msg_dict)
+            save_progress()  # ✅ save immediately after every message
 
-        all_messages = existing_messages + messages_data
+        if limit is None:
+            offset_id = 0
+            while True:
+                batch = []
+                async for msg in client.iter_messages(channel, limit=100, offset_id=offset_id):
+                    batch.append(msg)
+                if not batch:
+                    break
 
-        with open(JSON_FILENAME, "w", encoding="utf-8") as f:
-            json.dump(all_messages, f, indent=2, ensure_ascii=False)
+                for message in batch:
+                    await process_message(message)
 
-        logging.info(f"✅ Saved {len(all_messages)} total messages ({len(messages_data)} new) to {JSON_FILENAME}")
+                offset_id = batch[-1].id
+                logging.info(f"📥 Crawled up to message ID={offset_id}, continuing...")
 
-    def crawl(self, channel: str, limit: int = 50):
-        """
-        Crawl a Telegram channel.
+        else:
+            async for message in client.iter_messages(channel, limit=limit):
+                await process_message(message)
 
-        Args:
-            channel (str): Telegram channel name or link
-            limit (int): Number of messages to fetch (default=50)
-        """
+        logging.info("✅ Crawl finished.")
+
+    def crawl(self, channel: str, limit: int = None):
         asyncio.run(self._crawl_async(channel, limit))
+
+
+class SpiderCrawler:
+    def telegram(self, channel=None, limit=None):
+        """Crawl Telegram"""
+        TelegramCrawler().crawl(channel=channel, limit=limit)
+
+
