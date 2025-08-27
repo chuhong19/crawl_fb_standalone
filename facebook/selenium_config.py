@@ -8,7 +8,7 @@ def get_selenium_settings():
             "Chrome/91.0.4472.124 Safari/537.36"
         ),
         "DOWNLOADER_MIDDLEWARES": {
-            "facebook_spider.SimpleSeleniumMiddleware": 585,
+            "facebook.facebook_spider.SimpleSeleniumMiddleware": 585,
         },
         "CONCURRENT_REQUESTS": 1,
         "DOWNLOAD_DELAY": 2,

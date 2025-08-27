@@ -1,0 +1,27 @@
+import fire
+from twitter.twitter_spider import TwitterCrawler
+from tiktok.tiktok_spider import TikTokCrawler
+from telegram.telegram_spider import TelegramCrawler
+from facebook.facebook_spider import FacebookCrawler
+
+
+class SpiderCrawler:
+    def twitter(self, user=None, hashtag=None, limit=10):
+        """Crawl Twitter"""
+        TwitterCrawler().crawl(user=user, hashtag=hashtag, limit=limit)
+
+    def tiktok(self, profile=None, hashtag=None, limit=None):
+        """Crawl TikTok"""
+        TikTokCrawler().crawl(profile=profile, hashtag=hashtag, limit=limit)
+
+    def telegram(self, channel=None, limit=None):
+        """Crawl Telegram"""
+        TelegramCrawler().crawl(channel=channel, limit=limit)
+
+    def facebook(self, keyword=None):
+        """Crawl Facebook"""
+        FacebookCrawler().crawl(keyword=keyword)
+
+
+if __name__ == "__main__":
+    fire.Fire(SpiderCrawler)
