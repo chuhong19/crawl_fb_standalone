@@ -611,7 +611,7 @@ def run_facebook_page_spider(pagename="test"):
 
     settings = get_selenium_settings()
     settings["DOWNLOADER_MIDDLEWARES"] = {
-        "facebook_spider_page.SimpleSeleniumMiddleware": 585,
+        "facebook.facebook_spider_page.SimpleSeleniumMiddleware": 585,
     }
 
     try:
