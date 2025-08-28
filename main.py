@@ -18,8 +18,8 @@ class SpiderCrawler:
         """Crawl Telegram"""
         TelegramCrawler().crawl(channel=channel, limit=limit)
 
-    def facebook_page(self, pagename=None):
-        """Crawl Facebook page"""
+    def facebook(self, pagename=None):
+        """Crawl Facebook page by pagename"""
         FacebookPageCrawler().crawl(pagename=pagename)
 
 
