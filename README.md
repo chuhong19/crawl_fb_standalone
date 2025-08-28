@@ -24,23 +24,12 @@ pip install -r requirements.txt
 
 ## 📖 Cách sử dụng
 
-### Facebook Page Crawling
+### SNS Crawling
 
 ```bash
-# Syntax đơn giản
+# Facebook
 python main.py facebook <pagename>
 
-# Hoặc với parameter rõ ràng
-python main.py facebook --pagename <pagename>
-
-# Ví dụ
-python main.py facebook lailyhuynh
-python main.py facebook --pagename lailyhuynh
-```
-
-### Các Platform khác (nếu cần)
-
-```bash
 # Twitter
 python main.py twitter --profile <tên profile> --limit <giới hạn>
 python main.py twitter --hashtag <hashtag> --limit <giới hạn>
