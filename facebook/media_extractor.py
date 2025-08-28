@@ -68,61 +68,6 @@ def extract_images_from_article(article):
     return unique_images
 
 
-def extract_videos_from_article(article):
-    """
-    Extract video URLs from Facebook article element
-
-    Args:
-        article: Scrapy selector object for article
-
-    Returns:
-        list: List of video URLs
-    """
-    videos = []
-
-    # Multiple XPath selectors for videos
-    video_selectors = [
-        # Standard video tags
-        ".//video/@src",
-        ".//video/source/@src",
-        # Data attributes for lazy loading
-        ".//video/@data-src",
-        ".//video/source/@data-src",
-        # Facebook specific video containers
-        ".//div[contains(@class, 'videoContainer')]//video/@src",
-        ".//div[contains(@class, 'videoWrapper')]//video/@src",
-        # Links to video pages
-        ".//a[contains(@href, '/videos/')]/@href",
-        ".//a[contains(@href, '/watch/')]/@href",
-        # Embedded video iframes
-        ".//iframe[contains(@src, 'video')]/@src",
-        # Background video sources
-        ".//*[contains(@data-video-src, 'http')]/@data-video-src",
-    ]
-
-    for selector in video_selectors:
-        try:
-            found_videos = article.xpath(selector).getall()
-            for video in found_videos:
-                cleaned_url = clean_video_url(video)
-                if cleaned_url and is_valid_video_url(cleaned_url):
-                    videos.append(cleaned_url)
-        except Exception:
-            continue
-
-        # Remove duplicates and normalize URLs
-    seen = set()
-    unique_videos = []
-    for video in videos:
-        # Normalize video URL to remove duplicates
-        normalized = normalize_video_url(video)
-        if normalized and normalized not in seen:
-            seen.add(normalized)
-            unique_videos.append(normalized)
-
-    return unique_videos
-
-
 def clean_image_url(img_url):
     """
     Clean and normalize image URL
@@ -164,68 +109,6 @@ def clean_image_url(img_url):
         img_url = 'https://www.facebook.com' + img_url
 
         return img_url.strip()
-
-
-def clean_video_url(video_url):
-    """
-    Clean and normalize video URL
-
-    Args:
-        video_url: Raw video URL
-
-    Returns:
-        str: Cleaned video URL or None
-    """
-    if not video_url:
-        return None
-
-    # Convert relative URLs to absolute
-    if video_url.startswith('//'):
-        video_url = 'https:' + video_url
-    elif video_url.startswith('/'):
-        video_url = 'https://www.facebook.com' + video_url
-
-    return video_url.strip()
-
-
-def normalize_video_url(video_url):
-    """
-    Normalize video URL to remove duplicates
-
-    Args:
-        video_url: Video URL to normalize
-
-    Returns:
-        str: Normalized video URL
-    """
-    if not video_url:
-        return None
-
-    # Extract video ID from Facebook video URLs
-    import re
-
-    # Pattern for Facebook video URLs: /videos/123456/
-    video_id_match = re.search(r'/videos/(\d+)/', video_url)
-    if video_id_match:
-        video_id = video_id_match.group(1)
-        # Return standardized format
-        return f"https://www.facebook.com/videos/{video_id}/"
-
-    # Pattern for watch URLs: /watch/123456 or /watch/?v=123456
-    watch_id_match = re.search(r'/watch/(?:\?v=)?(\d+)', video_url)
-    if watch_id_match:
-        video_id = watch_id_match.group(1)
-        return f"https://www.facebook.com/watch/{video_id}/"
-
-    # For other video URLs, remove common tracking parameters
-    cleaned_url = re.sub(r'[?&]__cft__\[.*?\]', '', video_url)
-    cleaned_url = re.sub(r'[?&]__tn__=.*?(?=&|$)', '', cleaned_url)
-    cleaned_url = re.sub(r'[?&]_nc_.*?(?=&|$)', '', cleaned_url)
-
-    # Remove trailing ? if no parameters left
-    cleaned_url = re.sub(r'\?$', '', cleaned_url)
-
-    return cleaned_url
 
 
 def is_valid_image_url(url):
@@ -292,46 +175,6 @@ def is_valid_image_url(url):
             return False
 
     return any(domain in url for domain in valid_domains)
-
-
-def is_valid_video_url(url):
-    """
-    Check if URL is a valid video
-
-    Args:
-        url: Video URL to validate
-
-    Returns:
-        bool: True if valid video URL
-    """
-    if not url or len(url) < 10:
-        return False
-
-    # Must contain video indicators
-    video_indicators = [
-        '.mp4',
-        '.mov',
-        '.avi',
-        '.webm',
-        '/videos/',
-        '/watch/',
-        'video',
-    ]
-
-    has_video_indicator = any(indicator in url.lower()
-                              for indicator in video_indicators)
-
-    # Must be from Facebook domains
-    valid_domains = [
-        'facebook.com',
-        'fbcdn.net',
-        'scontent.com',
-        'video.',
-    ]
-
-    has_valid_domain = any(domain in url for domain in valid_domains)
-
-    return has_video_indicator and has_valid_domain
 
 
 def download_image_during_crawl(driver, img_url, save_dir="downloaded_images"):
@@ -671,19 +514,10 @@ def extract_all_images_from_facebook_post(driver, article_element, save_dir="ima
     try:
         print("🔍 Looking for photo galleries in post...")
 
-        # First extract any directly visible images
-        visible_images = extract_visible_images_from_post(
-            driver, article_element)
-        if visible_images:
-            print(f"📷 Found {len(visible_images)} directly visible images")
-            # Download visible images
-            for img_url in visible_images:
-                downloaded_path = download_facebook_image_with_session(
-                    driver, img_url, save_dir)
-                if downloaded_path:
-                    downloaded_images.append(downloaded_path)
+        # Skip visible images extraction - they're duplicates of gallery images
+        # visible_images = extract_visible_images_from_post(driver, article_element)
 
-        # Look for photo gallery triggers (multiple photos indicator)
+        # Find photo gallery triggers
         gallery_triggers = find_photo_gallery_triggers(driver, article_element)
 
         if gallery_triggers:
@@ -692,24 +526,37 @@ def extract_all_images_from_facebook_post(driver, article_element, save_dir="ima
 
             for i, trigger in enumerate(gallery_triggers):
                 print(f"📂 Processing gallery {i+1}/{len(gallery_triggers)}")
+
                 gallery_images = extract_images_from_gallery(
                     driver, trigger, save_dir)
+
                 downloaded_images.extend(gallery_images)
 
-                # Close gallery/modal after extraction
-                close_photo_viewer(driver)
+                # Small delay between galleries
                 time.sleep(1)
         else:
-            print("ℹ️  No photo galleries found in this post")
+            print("❌ No photo galleries found in post")
+            # Fallback: extract visible images only if no galleries found
+            visible_images = extract_visible_images_from_post(
+                driver, article_element)
+            if visible_images:
+                print(
+                    f"📷 Found {len(visible_images)} directly visible images as fallback")
+                for img_url in visible_images:
+                    downloaded_path = download_facebook_image_with_session(
+                        driver, img_url, save_dir)
+                    if downloaded_path:
+                        downloaded_images.append(downloaded_path)
+
+        # Remove any duplicates at the end level
+        unique_images = list(dict.fromkeys(downloaded_images))
+
+        print(f"✅ Total unique images extracted: {len(unique_images)}")
+        return unique_images
 
     except Exception as e:
-        print(f"❌ Error extracting all images: {e}")
-
-    # Remove duplicates
-    unique_images = list(dict.fromkeys(downloaded_images))
-    print(f"✅ Total unique images extracted: {len(unique_images)}")
-
-    return unique_images
+        print(f"❌ Error extracting images from post: {e}")
+        return downloaded_images
 
 
 def find_photo_gallery_triggers(driver, article_element):
@@ -721,7 +568,7 @@ def find_photo_gallery_triggers(driver, article_element):
         article_element: WebElement for the article/post
 
     Returns:
-        list: List of WebElements that can trigger photo galleries
+        list: List of WebElements that can trigger photo galleries (deduplicated)
     """
     triggers = []
 
@@ -763,17 +610,97 @@ def find_photo_gallery_triggers(driver, article_element):
     except Exception as e:
         print(f"❌ Error finding gallery triggers: {e}")
 
-    # Remove duplicates
+    # Deduplicate triggers that lead to the same gallery
+    unique_triggers = deduplicate_gallery_triggers(triggers)
+
+    if len(triggers) > len(unique_triggers):
+        print(
+            f"🔍 Found {len(triggers)} potential triggers, deduplicated to {len(unique_triggers)} unique galleries")
+
+    return unique_triggers
+
+
+def deduplicate_gallery_triggers(triggers):
+    """
+    Remove duplicate triggers that lead to the same gallery
+
+    Args:
+        triggers: List of WebElements that can trigger galleries
+
+    Returns:
+        list: Deduplicated list of unique gallery triggers
+    """
     unique_triggers = []
     seen_locations = set()
+    seen_containers = set()
 
     for trigger in triggers:
         try:
-            location = (trigger.location['x'], trigger.location['y'])
-            if location not in seen_locations:
-                seen_locations.add(location)
-                unique_triggers.append(trigger)
-        except:
+            # Method 1: Check if triggers are in the same container/parent
+            parent_element = trigger.find_element(By.XPATH, "./..")
+            parent_id = id(parent_element)
+
+            if parent_id in seen_containers:
+                print(f"  🔄 Skipping duplicate trigger in same container")
+                continue
+
+            # Method 2: Check location proximity (triggers close together likely same gallery)
+            location = trigger.location
+            # Group by 50px grid
+            location_key = (
+                round(location['x'] / 50) * 50, round(location['y'] / 50) * 50)
+
+            if location_key in seen_locations:
+                print(f"  🔄 Skipping duplicate trigger at similar location")
+                continue
+
+            # Method 3: Check if trigger contains similar text/images
+            trigger_text = trigger.text.lower().strip()
+            trigger_images = trigger.find_elements(By.TAG_NAME, "img")
+
+            # Skip if we already have a trigger with similar characteristics
+            is_duplicate = False
+            for existing_trigger in unique_triggers:
+                try:
+                    existing_text = existing_trigger.text.lower().strip()
+                    existing_images = existing_trigger.find_elements(
+                        By.TAG_NAME, "img")
+
+                    # Check text similarity
+                    if trigger_text and existing_text and trigger_text == existing_text:
+                        is_duplicate = True
+                        break
+
+                    # Check if both have images and similar count
+                    if len(trigger_images) > 0 and len(existing_images) > 0:
+                        if abs(len(trigger_images) - len(existing_images)) <= 1:
+                            # Compare first image source if available
+                            try:
+                                trigger_img_src = trigger_images[0].get_attribute(
+                                    'src')
+                                existing_img_src = existing_images[0].get_attribute(
+                                    'src')
+                                if trigger_img_src and existing_img_src and trigger_img_src == existing_img_src:
+                                    is_duplicate = True
+                                    break
+                            except:
+                                pass
+
+                except Exception:
+                    continue
+
+            if is_duplicate:
+                print(f"  🔄 Skipping duplicate trigger with similar content")
+                continue
+
+            # This trigger seems unique, add it
+            unique_triggers.append(trigger)
+            seen_locations.add(location_key)
+            seen_containers.add(parent_id)
+
+        except Exception as e:
+            # If we can't analyze this trigger, include it to be safe
+            unique_triggers.append(trigger)
             continue
 
     return unique_triggers
@@ -836,6 +763,8 @@ def extract_images_from_gallery(driver, gallery_trigger, save_dir="image_downloa
         list: List of downloaded image file paths
     """
     gallery_images = []
+    start_time = time.time()
+    max_gallery_time = 300  # 5 minutes max per gallery
 
     try:
         print("🖱️  Clicking gallery trigger...")
@@ -864,6 +793,12 @@ def extract_images_from_gallery(driver, gallery_trigger, save_dir="image_downloa
             # Fallback: try to extract images from current page
             gallery_images = extract_visible_images_after_click(
                 driver, save_dir)
+
+        # Check if we've been processing too long
+        elapsed_time = time.time() - start_time
+        if elapsed_time > max_gallery_time:
+            print(
+                f"⏰ Gallery processing timeout ({elapsed_time:.1f}s), stopping")
 
     except Exception as e:
         print(f"❌ Error extracting from gallery: {e}")
@@ -925,15 +860,40 @@ def navigate_and_extract_gallery_images(driver, save_dir="image_downloads", max_
     """
     extracted_images = []
     seen_images = set()
+    consecutive_failures = 0
+    max_consecutive_failures = 1  # Stop immediately when duplicate detected
+    last_image_url = None
+    start_time = time.time()
+    max_extraction_time = 240  # 4 minutes max for gallery navigation
 
     try:
         print("🔄 Navigating through gallery...")
 
         for i in range(max_images):
+            # Check timeout
+            elapsed_time = time.time() - start_time
+            if elapsed_time > max_extraction_time:
+                print(
+                    f"⏰ Gallery extraction timeout ({elapsed_time:.1f}s), stopping at image {i+1}")
+                break
+
             print(f"📷 Processing image {i+1}...")
 
             # Extract current image
             current_image_url = get_current_gallery_image_url(driver)
+
+            # Check if we got the same image as before (stuck/end)
+            if current_image_url == last_image_url:
+                consecutive_failures += 1
+                print(
+                    f"⚠️  Same image detected ({consecutive_failures}/{max_consecutive_failures})")
+
+                if consecutive_failures >= max_consecutive_failures:
+                    print("📍 Detected end of gallery (same image repeated)")
+                    break
+            else:
+                consecutive_failures = 0  # Reset counter when we get a new image
+                last_image_url = current_image_url
 
             if current_image_url and current_image_url not in seen_images:
                 seen_images.add(current_image_url)
@@ -950,6 +910,24 @@ def navigate_and_extract_gallery_images(driver, save_dir="image_downloads", max_
                     print(
                         f"  ❌ Failed to download: {current_image_url[:50]}...")
 
+            elif current_image_url in seen_images:
+                print(f"  ⏭️  Already processed this image")
+                consecutive_failures += 1
+                if consecutive_failures >= max_consecutive_failures:
+                    print("📍 Detected circular navigation, ending extraction")
+                    break
+            else:
+                print(f"  ❌ No valid image URL found")
+                consecutive_failures += 1
+                if consecutive_failures >= max_consecutive_failures:
+                    print("📍 No more valid images found, ending extraction")
+                    break
+
+            # If we already detected enough consecutive failures, don't try to navigate further
+            if consecutive_failures >= max_consecutive_failures:
+                print("📍 Stopping navigation due to consecutive failures")
+                break
+
             # Try to navigate to next image
             if not go_to_next_gallery_image(driver):
                 print("📍 Reached end of gallery or cannot navigate further")
@@ -957,7 +935,9 @@ def navigate_and_extract_gallery_images(driver, save_dir="image_downloads", max_
 
             time.sleep(1)  # Wait between navigation
 
-        print(f"✅ Gallery extraction complete: {len(extracted_images)} images")
+        elapsed_time = time.time() - start_time
+        print(
+            f"✅ Gallery extraction complete: {len(extracted_images)} images in {elapsed_time:.1f}s")
 
     except Exception as e:
         print(f"❌ Error navigating gallery: {e}")
@@ -1035,45 +1015,141 @@ def go_to_next_gallery_image(driver):
         bool: True if successfully navigated to next image
     """
     try:
+        # Get current image URL before trying to navigate
+        current_image_before = get_current_gallery_image_url(driver)
+
         # Selectors for next button in photo viewer
         next_selectors = [
             # Standard next button
-            "//div[@role='dialog']//div[@role='button'][@aria-label='Next' or @aria-label='다음']",
-            "//button[@aria-label='Next' or @aria-label='다음']",
+            "//div[@role='dialog']//div[@role='button'][@aria-label='Next photo' or @aria-label='Next' or @aria-label='다음']",
+            "//button[@aria-label='Next photo' or @aria-label='Next' or @aria-label='다음']",
 
             # Arrow buttons
             "//div[@role='dialog']//*[contains(@class, 'next') or contains(@class, 'arrow-right')]",
             "//div[contains(@class, 'photoViewer')]//*[@role='button'][contains(@aria-label, 'Next')]",
 
-            # Generic navigation
-            "//div[@role='dialog']//*[@role='button'][position() > 1]",
+            # Generic navigation - look for clickable elements on the right side
+            "//div[@role='dialog']//div[@role='button'][position() > 1 and contains(@style, 'right')]",
+            "//div[@role='dialog']//div[@role='button'][contains(@aria-label, 'next') or contains(@aria-label, 'Next')]",
         ]
+
+        navigation_attempted = False
 
         for selector in next_selectors:
             try:
                 next_buttons = driver.find_elements(By.XPATH, selector)
                 for button in next_buttons:
                     if button.is_displayed() and button.is_enabled():
-                        button.click()
-                        time.sleep(1)  # Wait for next image to load
-                        return True
+                        # Check if button is actually clickable (not disabled)
+                        button_classes = button.get_attribute("class") or ""
+                        button_style = button.get_attribute("style") or ""
+
+                        # Skip if button appears disabled
+                        if "disabled" in button_classes.lower() or "opacity: 0" in button_style:
+                            continue
+
+                        # Try to make button clickable by scrolling it into view
+                        try:
+                            # Scroll button into center of view
+                            driver.execute_script(
+                                "arguments[0].scrollIntoView({block: 'center', inline: 'center'});",
+                                button
+                            )
+                            time.sleep(0.5)
+
+                            # Wait for any overlays to disappear
+                            # Trigger any lazy overlays
+                            driver.execute_script("window.scrollBy(0, 0);")
+                            time.sleep(0.5)
+
+                            # Try normal click first
+                            button.click()
+                            navigation_attempted = True
+                            time.sleep(1)  # Wait for navigation
+
+                            # Check if image actually changed
+                            current_image_after = get_current_gallery_image_url(
+                                driver)
+                            if current_image_after != current_image_before:
+                                return True
+                            else:
+                                print("⚠️  Button clicked but image didn't change")
+
+                        except Exception as click_error:
+                            # If normal click fails, try JavaScript click
+                            try:
+                                print(
+                                    f"⚠️  Normal click failed, trying JavaScript click: {click_error}")
+                                driver.execute_script(
+                                    "arguments[0].click();", button)
+                                navigation_attempted = True
+                                time.sleep(1)
+
+                                # Check if image changed with JS click
+                                current_image_after = get_current_gallery_image_url(
+                                    driver)
+                                if current_image_after != current_image_before:
+                                    return True
+                                else:
+                                    print(
+                                        "⚠️  JavaScript click didn't change image")
+
+                            except Exception as js_error:
+                                print(
+                                    f"⚠️  JavaScript click also failed: {js_error}")
+                                continue
+
             except Exception:
                 continue
 
-        # Fallback: try arrow key navigation
-        try:
-            from selenium.webdriver.common.keys import Keys
-            from selenium.webdriver.common.action_chains import ActionChains
+        # Fallback: try arrow key navigation only if no buttons were found
+        if not navigation_attempted:
+            try:
+                from selenium.webdriver.common.keys import Keys
+                from selenium.webdriver.common.action_chains import ActionChains
 
-            ActionChains(driver).send_keys(Keys.ARROW_RIGHT).perform()
-            time.sleep(1)
-            return True
-        except Exception:
-            pass
+                # Try to focus on the photo viewer dialog
+                dialogs = driver.find_elements(
+                    By.XPATH, "//div[@role='dialog']")
+                focused = False
 
+                for dialog in dialogs:
+                    try:
+                        if dialog.is_displayed():
+                            # Click in the center of the dialog to focus it
+                            driver.execute_script(
+                                "arguments[0].focus(); arguments[0].click();",
+                                dialog
+                            )
+                            time.sleep(0.5)
+                            focused = True
+                            break
+                    except:
+                        continue
+
+                if focused:
+                    # Send arrow key to focused dialog
+                    ActionChains(driver).send_keys(Keys.ARROW_RIGHT).perform()
+                    time.sleep(1)
+
+                    # Check if image changed with arrow key
+                    current_image_after = get_current_gallery_image_url(driver)
+                    if current_image_after != current_image_before:
+                        return True
+                    else:
+                        print("⚠️  Arrow key navigation didn't change image")
+                else:
+                    print("⚠️  Could not focus dialog for arrow key navigation")
+
+            except Exception as key_error:
+                print(f"⚠️  Arrow key navigation failed: {key_error}")
+
+        # If we reach here, navigation failed
+        print("❌ All navigation methods failed")
         return False
 
-    except Exception:
+    except Exception as e:
+        print(f"❌ Error in navigation: {e}")
         return False
 
 
@@ -1317,19 +1393,3 @@ if __name__ == "__main__":
         cleaned = clean_image_url(img)
         valid = is_valid_image_url(cleaned) if cleaned else False
         print(f"  '{img[:60]}...' → Valid: {valid}")
-
-    print("\n🎥 Testing video URL normalization:")
-    test_videos = [
-        "https://www.facebook.com/61561110231062/videos/1790230575171441/?__cft__[0]=AZUf0Reb",
-        "https://www.facebook.com/61561110231062/videos/1790230575171441/?__tn__=%2CO%2CP-R",
-        "/videos/123456/",
-        "https://facebook.com/watch/456789",
-    ]
-
-    for video in test_videos:
-        cleaned = clean_video_url(video)
-        normalized = normalize_video_url(cleaned) if cleaned else None
-        valid = is_valid_video_url(normalized) if normalized else False
-        print(f"  Original: {video[:60]}...")
-        print(f"  Normalized: {normalized} (valid: {valid})")
-        print()
