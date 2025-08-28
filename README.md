@@ -1,28 +1,28 @@
 # SNS Crawl Data
 
-## 🚀 Cài đặt
+## 🚀 Installation
 
-### 1. Tạo môi trường ảo
+### 1. Create virtual environment
 
 ```bash
 python -m venv venv
 source venv/bin/activate  # Linux/Mac
-# hoặc
+# or
 venv\Scripts\activate     # Windows
 ```
 
-### 2. Cài đặt dependencies
+### 2. Install dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 3. Cài đặt Chrome browser
+### 3. Install Chrome browser
 
-- Đảm bảo có Chrome browser được cài đặt
-- Spider sẽ tự động download ChromeDriver qua `webdriver-manager`
+- Make sure Chrome browser is installed
+- Spider will automatically download ChromeDriver via `webdriver-manager`
 
-## 📖 Cách sử dụng
+## 📖 Usage
 
 ### SNS Crawling
 
@@ -31,13 +31,13 @@ pip install -r requirements.txt
 python main.py facebook <pagename>
 
 # Twitter
-python main.py twitter --profile <tên profile> --limit <giới hạn>
-python main.py twitter --hashtag <hashtag> --limit <giới hạn>
+python main.py twitter --profile <profile_name> --limit <limit>
+python main.py twitter --hashtag <hashtag> --limit <limit>
 
 # Telegram
-python main.py telegram --channel <tên channel> --limit <giới hạn>
+python main.py telegram --channel <channel_name> --limit <limit>
 
 # TikTok
-python main.py tiktok --profile <tên profile> --limit <giới hạn>
-python main.py tiktok --hashtag <hashtag> --limit <giới hạn>
+python main.py tiktok --profile <profile_name> --limit <limit>
+python main.py tiktok --hashtag <hashtag> --limit <limit>
 ```
