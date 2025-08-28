@@ -112,31 +112,32 @@ class FacebookPageSpider(scrapy.Spider):
 
     def parse(self, response: HtmlResponse) -> dict:
         articles = response.xpath(self.articles_xpath)
-
-        if len(articles) == 0:
-            page_text = response.text
-            if any(indicator in page_text for indicator in ["You must log in to continue", "Log Into Facebook"]):
-                print("⚠️  Page requires login to view content")
-            else:
-                print("⚠️  No articles found on this page")
-
-        # Take ONE screenshot of the entire Facebook page
         driver = response.request.meta.get('driver')
-        page_screenshot_path = None
+
+        # Dismiss popups before proceeding
         if driver:
-            print("📸 Taking full page screenshot...")
-            from .media_extractor import screenshot_full_page
-            page_screenshot_path = screenshot_full_page(
-                driver, save_dir="screenshots")
-            print(f"📊 Captured full page screenshot: {page_screenshot_path}")
+            from .media_extractor import dismiss_facebook_popup
+            dismiss_facebook_popup(driver)
 
-        for article in articles:
-            # All articles will use the same full page screenshot
-            if fb_article := self.parse_article(article, response, page_screenshot_path):
-                self.upload_callback(fb_article)
-        time.sleep(10)
+        # Process only the first article (latest post)
+        if articles:
+            article = articles[0]
+            if fb_article := self.parse_article(article, response):
+                if self.upload_callback:
+                    self.upload_callback(fb_article)
+                return fb_article
 
-    def parse_article(self, article, response, screenshot_path=None):
+    def parse_article(self, article, response):
+        """
+        Parse individual Facebook page article/post and extract data
+
+        Args:
+            article: Scrapy selector for article element
+            response: Scrapy response object
+
+        Returns:
+            MockFacebook: Parsed Facebook post data or None if parsing failed
+        """
         url_selectors = [
             ".//div//span/a[@aria-label!='확대하기' and @role='link']/@href",
             ".//a[contains(@href, '/posts/')]/@href",
@@ -254,14 +255,12 @@ class FacebookPageSpider(scrapy.Spider):
                         images.extend(downloaded_paths)
 
                 # Also add screenshot as backup
-                if screenshot_path:
-                    images.append(screenshot_path)
-                    print(f"📸 Added screenshot: {screenshot_path}")
+                # Screenshot functionality removed
+                pass
             else:
-                # Fallback to screenshot only if no driver
-                if screenshot_path:
-                    images = [screenshot_path]
-                    print(f"📸 Using screenshot only: {screenshot_path}")
+                # Fallback - no screenshot needed
+                # Screenshot functionality removed
+                pass
 
             print(
                 f"✓ Crawled: {self.pagename} | Content: {description[:50]}... | Total images: {len(images)}")
