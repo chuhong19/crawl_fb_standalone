@@ -74,6 +74,19 @@ class FacebookHashtagSpider(scrapy.Spider):
         self.upload_callback = upload_callback
 
     def start_requests(self) -> Iterable[Request]:
+        """Deprecated method - use start() instead"""
+        for url in self.start_urls:
+            yield Request(
+                url,
+                callback=self.parse,
+                meta={
+                    "callback": click_allowed_cookies_button,
+                },
+                dont_filter=True,
+            )
+
+    async def start(self):
+        """New async start method for Scrapy 2.13+"""
         for url in self.start_urls:
             yield Request(
                 url,

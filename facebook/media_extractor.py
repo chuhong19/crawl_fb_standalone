@@ -1057,10 +1057,23 @@ def go_to_next_gallery_image(driver):
                             )
                             time.sleep(0.5)
 
+                            # Try to remove common Facebook overlays that block clicks
+                            driver.execute_script("""
+                                // Remove common overlay elements that block clicks
+                                var overlays = document.querySelectorAll('.__fb-light-mode, .x1qjc9v5.x9f619, .x78zum5.xdt5ytf');
+                                overlays.forEach(function(overlay) {
+                                    if (overlay.style.zIndex > 1000) {
+                                        overlay.style.zIndex = '1';
+                                    }
+                                });
+                                
+                                // Ensure button is on top
+                                arguments[0].style.zIndex = '9999';
+                                arguments[0].style.position = 'relative';
+                            """, button)
+
                             # Wait for any overlays to disappear
-                            # Trigger any lazy overlays
-                            driver.execute_script("window.scrollBy(0, 0);")
-                            time.sleep(0.5)
+                            time.sleep(0.3)
 
                             # Try normal click first
                             button.click()
@@ -1073,30 +1086,33 @@ def go_to_next_gallery_image(driver):
                             if current_image_after != current_image_before:
                                 return True
                             else:
-                                print("⚠️  Button clicked but image didn't change")
+                                # Don't print warning here, will try other methods
+                                pass
 
                         except Exception as click_error:
                             # If normal click fails, try JavaScript click
                             try:
-                                print(
-                                    f"⚠️  Normal click failed, trying JavaScript click: {click_error}")
+                                # Only show warning for first failed attempt, not every fallback
+                                if "element click intercepted" in str(click_error) and not navigation_attempted:
+                                    # Suppress verbose click intercepted warnings - this is expected
+                                    pass
+                                else:
+                                    print(
+                                        f"⚠️  Normal click failed, trying JavaScript click: {str(click_error).split(':')[0]}...")
+
                                 driver.execute_script(
                                     "arguments[0].click();", button)
                                 navigation_attempted = True
                                 time.sleep(1)
 
-                                # Check if image changed with JS click
+                                # Check if navigation worked
                                 current_image_after = get_current_gallery_image_url(
                                     driver)
                                 if current_image_after != current_image_before:
                                     return True
-                                else:
-                                    print(
-                                        "⚠️  JavaScript click didn't change image")
 
                             except Exception as js_error:
-                                print(
-                                    f"⚠️  JavaScript click also failed: {js_error}")
+                                # Silent fallback to arrow keys - don't spam console
                                 continue
 
             except Exception:
