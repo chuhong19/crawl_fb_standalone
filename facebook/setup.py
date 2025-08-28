@@ -8,14 +8,14 @@ with open("../requirements.txt", "r", encoding="utf-8") as fh:
                     and not line.startswith("#")]
 
 setup(
-    name="facebook-hashtag-spider",
+    name="facebook-page-spider",
     version="1.0.0",
     author="Your Name",
     author_email="your.email@example.com",
-    description="Standalone Facebook Hashtag Spider using Scrapy and Selenium",
+    description="Standalone Facebook Page Spider using Scrapy and Selenium",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/yourusername/facebook-hashtag-spider",
+    url="https://github.com/yourusername/facebook-page-spider",
     packages=find_packages(),
     classifiers=[
         "Development Status :: 4 - Beta",
@@ -35,7 +35,7 @@ setup(
     install_requires=requirements,
     entry_points={
         "console_scripts": [
-            "facebook-spider=facebook_spider:main",
+            "facebook-page-spider=facebook_spider_page:main",
         ],
     },
     include_package_data=True,
