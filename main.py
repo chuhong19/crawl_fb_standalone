@@ -2,7 +2,7 @@ import fire
 from twitter.twitter_spider import TwitterCrawler
 from tiktok.tiktok_spider import TikTokCrawler
 from telegram.telegram_spider import TelegramCrawler
-from facebook.facebook_spider_page import FacebookPageCrawler
+from facebook.facebook_spider import FacebookPageCrawler
 
 
 class SpiderCrawler:

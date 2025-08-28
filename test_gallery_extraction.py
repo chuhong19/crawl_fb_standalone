@@ -6,7 +6,7 @@ This script demonstrates the new capability to extract ALL images from Facebook 
 including hidden images in photo galleries that require clicking to access.
 """
 
-from facebook.facebook_spider_page import FacebookPageCrawler
+from facebook.facebook_spider import FacebookPageCrawler
 import sys
 import os
 

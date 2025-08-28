@@ -77,7 +77,7 @@ def parse_relative_time(relative_text):
     elif any(word in text for word in ['just now', 'moment ago', 'now']):
         return datetime.now(timezone.utc)
 
-    print(f"⚠️  Cannot parse time: '{relative_text}', using current time")
+    print(f"⚠️ Cannot parse time: '{relative_text}', using current time")
     return datetime.now(timezone.utc)
 
 

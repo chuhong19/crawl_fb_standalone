@@ -365,8 +365,7 @@ def extract_all_images_from_facebook_post(driver, article_element, save_dir="ima
         gallery_triggers = find_photo_gallery_triggers(driver, article_element)
 
         if gallery_triggers:
-            print(
-                f"🖼️  Found {len(gallery_triggers)} photo gallery trigger(s)")
+            print(f"🖼️ Found {len(gallery_triggers)} photo gallery trigger(s)")
 
             for i, trigger in enumerate(gallery_triggers):
                 print(f"📂 Processing gallery {i+1}/{len(gallery_triggers)}")
@@ -492,55 +491,52 @@ def deduplicate_gallery_triggers(triggers):
             location = trigger.location
             # Group by 50px grid
             location_key = (
-                round(location['x'] / 50) * 50, round(location['y'] / 50) * 50)
+                location['x'] // 50,
+                location['y'] // 50
+            )
 
             if location_key in seen_locations:
                 print(f"  🔄 Skipping duplicate trigger at similar location")
                 continue
 
-            # Method 3: Check if trigger contains similar text/images
-            trigger_text = trigger.text.lower().strip()
-            trigger_images = trigger.find_elements(By.TAG_NAME, "img")
+            seen_locations.add(location_key)
+            seen_containers.add(parent_id)
 
-            # Skip if we already have a trigger with similar characteristics
-            is_duplicate = False
+            # Method 3: Check content similarity
+            current_text = trigger.text.strip()
+            current_images = trigger.find_elements(By.TAG_NAME, "img")
+            current_image_srcs = [img.get_attribute(
+                "src") for img in current_images[:2]]  # First 2 images
+
+            # Check if content is too similar to existing triggers
+            is_similar = False
             for existing_trigger in unique_triggers:
                 try:
-                    existing_text = existing_trigger.text.lower().strip()
+                    existing_text = existing_trigger.text.strip()
                     existing_images = existing_trigger.find_elements(
                         By.TAG_NAME, "img")
+                    existing_image_srcs = [img.get_attribute(
+                        "src") for img in existing_images[:2]]
 
                     # Check text similarity
-                    if trigger_text and existing_text and trigger_text == existing_text:
-                        is_duplicate = True
+                    if current_text and existing_text and current_text == existing_text:
+                        is_similar = True
                         break
 
-                    # Check if both have images and similar count
-                    if len(trigger_images) > 0 and len(existing_images) > 0:
-                        if abs(len(trigger_images) - len(existing_images)) <= 1:
-                            # Compare first image source if available
-                            try:
-                                trigger_img_src = trigger_images[0].get_attribute(
-                                    'src')
-                                existing_img_src = existing_images[0].get_attribute(
-                                    'src')
-                                if trigger_img_src and existing_img_src and trigger_img_src == existing_img_src:
-                                    is_duplicate = True
-                                    break
-                            except:
-                                pass
+                    # Check image similarity
+                    if current_image_srcs and existing_image_srcs:
+                        if any(src in existing_image_srcs for src in current_image_srcs if src):
+                            is_similar = True
+                            break
 
                 except Exception:
                     continue
 
-            if is_duplicate:
+            if is_similar:
                 print(f"  🔄 Skipping duplicate trigger with similar content")
                 continue
 
-            # This trigger seems unique, add it
             unique_triggers.append(trigger)
-            seen_locations.add(location_key)
-            seen_containers.add(parent_id)
 
         except Exception as e:
             # If we can't analyze this trigger, include it to be safe
@@ -611,7 +607,7 @@ def extract_images_from_gallery(driver, gallery_trigger, save_dir="image_downloa
     max_gallery_time = 300  # 5 minutes max per gallery
 
     try:
-        print("🖱️  Clicking gallery trigger...")
+        print("🖱️ Clicking gallery trigger...")
 
         # Scroll trigger into view and click
         driver.execute_script(
@@ -633,7 +629,7 @@ def extract_images_from_gallery(driver, gallery_trigger, save_dir="image_downloa
             gallery_images = navigate_and_extract_gallery_images(
                 driver, save_dir)
         else:
-            print("⚠️  Photo viewer did not open, trying direct image extraction...")
+            print("⚠️ Photo viewer did not open, trying direct image extraction...")
             # Fallback: try to extract images from current page
             gallery_images = extract_visible_images_after_click(
                 driver, save_dir)
@@ -721,6 +717,11 @@ def navigate_and_extract_gallery_images(driver, save_dir="image_downloads", max_
                     f"⏰ Gallery extraction timeout ({elapsed_time:.1f}s), stopping at image {i+1}")
                 break
 
+            # If we already detected enough consecutive failures, don't try to navigate further
+            if consecutive_failures >= max_consecutive_failures:
+                print("📍 Stopping navigation due to consecutive failures")
+                break
+
             print(f"📷 Processing image {i+1}...")
 
             # Extract current image
@@ -730,7 +731,7 @@ def navigate_and_extract_gallery_images(driver, save_dir="image_downloads", max_
             if current_image_url == last_image_url:
                 consecutive_failures += 1
                 print(
-                    f"⚠️  Same image detected ({consecutive_failures}/{max_consecutive_failures})")
+                    f"⚠️ Same image detected ({consecutive_failures}/{max_consecutive_failures})")
 
                 if consecutive_failures >= max_consecutive_failures:
                     print("📍 Detected end of gallery (same image repeated)")
@@ -755,7 +756,7 @@ def navigate_and_extract_gallery_images(driver, save_dir="image_downloads", max_
                         f"  ❌ Failed to download: {current_image_url[:50]}...")
 
             elif current_image_url in seen_images:
-                print(f"  ⏭️  Already processed this image")
+                print(f"  ⏭️ Already processed this image")
                 consecutive_failures += 1
                 if consecutive_failures >= max_consecutive_failures:
                     print("📍 Detected circular navigation, ending extraction")
@@ -763,21 +764,20 @@ def navigate_and_extract_gallery_images(driver, save_dir="image_downloads", max_
             else:
                 print(f"  ❌ No valid image URL found")
                 consecutive_failures += 1
-                if consecutive_failures >= max_consecutive_failures:
-                    print("📍 No more valid images found, ending extraction")
-                    break
 
-            # If we already detected enough consecutive failures, don't try to navigate further
+            # Stop if too many consecutive failures
             if consecutive_failures >= max_consecutive_failures:
-                print("📍 Stopping navigation due to consecutive failures")
+                print("📍 No more valid images found, ending extraction")
                 break
 
             # Try to navigate to next image
-            if not go_to_next_gallery_image(driver):
-                print("📍 Reached end of gallery or cannot navigate further")
-                break
+            if i < max_images - 1:  # Don't try to navigate after last image
+                if not go_to_next_gallery_image(driver):
+                    print("📍 Reached end of gallery or cannot navigate further")
+                    break
 
-            time.sleep(1)  # Wait between navigation
+            # Small delay between images
+            time.sleep(1)
 
         elapsed_time = time.time() - start_time
         print(
@@ -997,12 +997,12 @@ def go_to_next_gallery_image(driver):
                     if current_image_after != current_image_before:
                         return True
                     else:
-                        print("⚠️  Arrow key navigation didn't change image")
+                        print("⚠️ Arrow key navigation didn't change image")
                 else:
-                    print("⚠️  Could not focus dialog for arrow key navigation")
+                    print("⚠️ Could not focus dialog for arrow key navigation")
 
             except Exception as key_error:
-                print(f"⚠️  Arrow key navigation failed: {key_error}")
+                print(f"⚠️ Arrow key navigation failed: {key_error}")
 
         # If we reach here, navigation failed
         print("❌ All navigation methods failed")

@@ -78,7 +78,7 @@ class FacebookPageSpider(scrapy.Spider):
         ".//text()[normalize-space() and string-length() > 10]"
     ]
     article_header_xpath = (
-        ".//div//span/a[@aria-label!='확대하기' and @role='link']"
+        ".//div//span/a[@aria-label!='Enlarge' and @role='link']"
     )
 
     def __init__(self, pagename, upload_callback, *args, **kwargs: Any):
@@ -139,13 +139,10 @@ class FacebookPageSpider(scrapy.Spider):
             MockFacebook: Parsed Facebook post data or None if parsing failed
         """
         url_selectors = [
-            ".//div//span/a[@aria-label!='확대하기' and @role='link']/@href",
+            ".//div//span/a[@aria-label!='Enlarge' and @role='link']/@href",
+            ".//span/a[@role='link']/@href",
             ".//a[contains(@href, '/posts/')]/@href",
-            ".//a[contains(@href, '/stories/')]/@href",
-            ".//a[contains(@href, '/reel/')]/@href",
-            ".//a[contains(@href, '/photo/')]/@href",
-            ".//a[@role='link'][1]/@href",
-            ".//a[1]/@href",
+            ".//a[contains(@href, '/photos/')]/@href",
         ]
 
         article_url = None
@@ -661,11 +658,12 @@ def test_callback_page(data):
     print(f"📝 CONTENT: {content}")
 
     images = data.get('images', [])
-    print(f"🖼️  IMAGES ({len(images)}):")
-    for i, img in enumerate(images, 1):
-        print(f"  {i}. {img}")
+    print(f"🖼️ IMAGES ({len(images)}):")
+    for i, img_path in enumerate(images, 1):
+        img_name = os.path.basename(img_path) if img_path else "N/A"
+        print(f"  {i}. {img_name}")
 
-    print("=" * 80)
+    print("="*80)
 
 
 # =========================================
