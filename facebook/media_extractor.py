@@ -10,6 +10,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, WebDriverException
+import time
 
 
 def extract_images_from_article(article):
@@ -67,61 +68,6 @@ def extract_images_from_article(article):
     return unique_images
 
 
-def extract_videos_from_article(article):
-    """
-    Extract video URLs from Facebook article element
-
-    Args:
-        article: Scrapy selector object for article
-
-    Returns:
-        list: List of video URLs
-    """
-    videos = []
-
-    # Multiple XPath selectors for videos
-    video_selectors = [
-        # Standard video tags
-        ".//video/@src",
-        ".//video/source/@src",
-        # Data attributes for lazy loading
-        ".//video/@data-src",
-        ".//video/source/@data-src",
-        # Facebook specific video containers
-        ".//div[contains(@class, 'videoContainer')]//video/@src",
-        ".//div[contains(@class, 'videoWrapper')]//video/@src",
-        # Links to video pages
-        ".//a[contains(@href, '/videos/')]/@href",
-        ".//a[contains(@href, '/watch/')]/@href",
-        # Embedded video iframes
-        ".//iframe[contains(@src, 'video')]/@src",
-        # Background video sources
-        ".//*[contains(@data-video-src, 'http')]/@data-video-src",
-    ]
-
-    for selector in video_selectors:
-        try:
-            found_videos = article.xpath(selector).getall()
-            for video in found_videos:
-                cleaned_url = clean_video_url(video)
-                if cleaned_url and is_valid_video_url(cleaned_url):
-                    videos.append(cleaned_url)
-        except Exception:
-            continue
-
-        # Remove duplicates and normalize URLs
-    seen = set()
-    unique_videos = []
-    for video in videos:
-        # Normalize video URL to remove duplicates
-        normalized = normalize_video_url(video)
-        if normalized and normalized not in seen:
-            seen.add(normalized)
-            unique_videos.append(normalized)
-
-    return unique_videos
-
-
 def clean_image_url(img_url):
     """
     Clean and normalize image URL
@@ -163,68 +109,6 @@ def clean_image_url(img_url):
         img_url = 'https://www.facebook.com' + img_url
 
         return img_url.strip()
-
-
-def clean_video_url(video_url):
-    """
-    Clean and normalize video URL
-
-    Args:
-        video_url: Raw video URL
-
-    Returns:
-        str: Cleaned video URL or None
-    """
-    if not video_url:
-        return None
-
-    # Convert relative URLs to absolute
-    if video_url.startswith('//'):
-        video_url = 'https:' + video_url
-    elif video_url.startswith('/'):
-        video_url = 'https://www.facebook.com' + video_url
-
-    return video_url.strip()
-
-
-def normalize_video_url(video_url):
-    """
-    Normalize video URL to remove duplicates
-
-    Args:
-        video_url: Video URL to normalize
-
-    Returns:
-        str: Normalized video URL
-    """
-    if not video_url:
-        return None
-
-    # Extract video ID from Facebook video URLs
-    import re
-
-    # Pattern for Facebook video URLs: /videos/123456/
-    video_id_match = re.search(r'/videos/(\d+)/', video_url)
-    if video_id_match:
-        video_id = video_id_match.group(1)
-        # Return standardized format
-        return f"https://www.facebook.com/videos/{video_id}/"
-
-    # Pattern for watch URLs: /watch/123456 or /watch/?v=123456
-    watch_id_match = re.search(r'/watch/(?:\?v=)?(\d+)', video_url)
-    if watch_id_match:
-        video_id = watch_id_match.group(1)
-        return f"https://www.facebook.com/watch/{video_id}/"
-
-    # For other video URLs, remove common tracking parameters
-    cleaned_url = re.sub(r'[?&]__cft__\[.*?\]', '', video_url)
-    cleaned_url = re.sub(r'[?&]__tn__=.*?(?=&|$)', '', cleaned_url)
-    cleaned_url = re.sub(r'[?&]_nc_.*?(?=&|$)', '', cleaned_url)
-
-    # Remove trailing ? if no parameters left
-    cleaned_url = re.sub(r'\?$', '', cleaned_url)
-
-    return cleaned_url
 
 
 def is_valid_image_url(url):
@@ -291,46 +175,6 @@ def is_valid_image_url(url):
             return False
 
     return any(domain in url for domain in valid_domains)
-
-
-def is_valid_video_url(url):
-    """
-    Check if URL is a valid video
-
-    Args:
-        url: Video URL to validate
-
-    Returns:
-        bool: True if valid video URL
-    """
-    if not url or len(url) < 10:
-        return False
-
-    # Must contain video indicators
-    video_indicators = [
-        '.mp4',
-        '.mov',
-        '.avi',
-        '.webm',
-        '/videos/',
-        '/watch/',
-        'video',
-    ]
-
-    has_video_indicator = any(indicator in url.lower()
-                              for indicator in video_indicators)
-
-    # Must be from Facebook domains
-    valid_domains = [
-        'facebook.com',
-        'fbcdn.net',
-        'scontent.com',
-        'video.',
-    ]
-
-    has_valid_domain = any(domain in url for domain in valid_domains)
-
-    return has_video_indicator and has_valid_domain
 
 
 def download_image_during_crawl(driver, img_url, save_dir="downloaded_images"):
@@ -421,162 +265,6 @@ def extract_and_download_images_from_article(article, driver, save_dir="download
     return local_paths
 
 
-def screenshot_article(driver, article_element, save_dir="screenshots", article_index=0):
-    """
-    Take screenshot of specific article element
-
-    Args:
-        driver: Selenium WebDriver instance
-        article_element: Scrapy selector (we need to find corresponding WebElement)
-        save_dir: Directory to save screenshots
-        article_index: Index for unique filename
-
-    Returns:
-        str: Local screenshot file path or None if failed
-    """
-    try:
-        if not os.path.exists(save_dir):
-            os.makedirs(save_dir)
-
-        # Scroll article into view for better screenshot
-        # Since we have Scrapy selector, we need to find the corresponding WebElement
-        # Get all article elements and use index to match
-        web_articles = driver.find_elements(By.XPATH, "//div[@role='article']")
-
-        if article_index < len(web_articles):
-            article_web_element = web_articles[article_index]
-
-            # Scroll element into view
-            driver.execute_script(
-                "arguments[0].scrollIntoView({block: 'center'});", article_web_element)
-
-            # Wait a moment for content to load
-            import time
-            time.sleep(1)
-
-            # Take screenshot of the specific element
-            screenshot_data = article_web_element.screenshot_as_png
-
-            # Generate filename
-            timestamp = int(time.time())
-            filename = f"article_{article_index}_{timestamp}.png"
-            filepath = os.path.join(save_dir, filename)
-
-            # Save screenshot
-            with open(filepath, 'wb') as f:
-                f.write(screenshot_data)
-
-            print(f"📸 Screenshot saved: {filepath}")
-            return filepath
-        else:
-            print(f"❌ Article index {article_index} not found in WebDriver")
-            return None
-
-    except Exception as e:
-        print(f"❌ Error taking screenshot: {e}")
-        return None
-
-
-def screenshot_full_page(driver, save_dir="screenshots"):
-    """
-    Take full page screenshot
-
-    Args:
-        driver: Selenium WebDriver instance
-        save_dir: Directory to save screenshots
-
-    Returns:
-        str: Local screenshot file path or None if failed
-    """
-    try:
-        if not os.path.exists(save_dir):
-            os.makedirs(save_dir)
-
-        # Dismiss any popup/modal first
-        print("🔍 Checking for popups to dismiss...")
-        dismiss_facebook_popup(driver)
-
-        # Scroll to top first
-        driver.execute_script("window.scrollTo(0, 0);")
-
-        # Wait a moment for content to settle
-        import time
-        time.sleep(2)
-
-        # Take full page screenshot
-        timestamp = int(time.time())
-        filename = f"full_page_{timestamp}.png"
-        filepath = os.path.join(save_dir, filename)
-
-        # Full page screenshot
-        driver.save_screenshot(filepath)
-
-        print(f"📸 Full page screenshot saved: {filepath}")
-        return filepath
-
-    except Exception as e:
-        print(f"❌ Error taking full page screenshot: {e}")
-        return None
-
-
-def screenshot_articles_on_page(driver, save_dir="screenshots"):
-    """
-    Take screenshots of all articles on current page
-
-    Args:
-        driver: Selenium WebDriver instance
-        save_dir: Directory to save screenshots
-
-    Returns:
-        list: List of screenshot file paths
-    """
-    screenshots = []
-
-    try:
-        # Find all article elements
-        web_articles = driver.find_elements(By.XPATH, "//div[@role='article']")
-
-        print(f"📸 Found {len(web_articles)} articles to screenshot")
-
-        for i, article_element in enumerate(web_articles):
-            try:
-                # Scroll article into view
-                driver.execute_script(
-                    "arguments[0].scrollIntoView({block: 'center'});", article_element)
-
-                # Wait for content to load
-                import time
-                time.sleep(1)
-
-                # Take screenshot
-                screenshot_data = article_element.screenshot_as_png
-
-                # Generate filename
-                timestamp = int(time.time())
-                filename = f"article_{i}_{timestamp}.png"
-                filepath = os.path.join(save_dir, filename)
-
-                if not os.path.exists(save_dir):
-                    os.makedirs(save_dir)
-
-                # Save screenshot
-                with open(filepath, 'wb') as f:
-                    f.write(screenshot_data)
-
-                screenshots.append(filepath)
-                print(f"  📸 Article {i+1}: {filepath}")
-
-            except Exception as e:
-                print(f"  ❌ Failed to screenshot article {i}: {e}")
-                continue
-
-        return screenshots
-
-    except Exception as e:
-        print(f"❌ Error in screenshot_articles_on_page: {e}")
-        return []
-
-
 def dismiss_facebook_popup(driver):
     """
     Dismiss Facebook login popup/modal that blocks content
@@ -653,6 +341,901 @@ def dismiss_facebook_popup(driver):
         return False
 
 
+def extract_all_images_from_facebook_post(driver, article_element, save_dir="image_downloads"):
+    """
+    Extract ALL images from Facebook post by clicking through photo galleries
+
+    Args:
+        driver: Selenium WebDriver instance
+        article_element: WebElement for the article/post
+        save_dir: Directory to save images
+
+    Returns:
+        list: List of downloaded image file paths
+    """
+    downloaded_images = []
+
+    try:
+        print("🔍 Looking for photo galleries in post...")
+
+        # Skip visible images extraction - they're duplicates of gallery images
+        # visible_images = extract_visible_images_from_post(driver, article_element)
+
+        # Find photo gallery triggers
+        gallery_triggers = find_photo_gallery_triggers(driver, article_element)
+
+        if gallery_triggers:
+            print(
+                f"🖼️  Found {len(gallery_triggers)} photo gallery trigger(s)")
+
+            for i, trigger in enumerate(gallery_triggers):
+                print(f"📂 Processing gallery {i+1}/{len(gallery_triggers)}")
+
+                gallery_images = extract_images_from_gallery(
+                    driver, trigger, save_dir)
+
+                downloaded_images.extend(gallery_images)
+
+                # Small delay between galleries
+                time.sleep(1)
+        else:
+            print("❌ No photo galleries found in post")
+            # Fallback: extract visible images only if no galleries found
+            visible_images = extract_visible_images_from_post(
+                driver, article_element)
+            if visible_images:
+                print(
+                    f"📷 Found {len(visible_images)} directly visible images as fallback")
+                for img_url in visible_images:
+                    downloaded_path = download_facebook_image_with_session(
+                        driver, img_url, save_dir)
+                    if downloaded_path:
+                        downloaded_images.append(downloaded_path)
+
+        # Remove any duplicates at the end level
+        unique_images = list(dict.fromkeys(downloaded_images))
+
+        print(f"✅ Total unique images extracted: {len(unique_images)}")
+        return unique_images
+
+    except Exception as e:
+        print(f"❌ Error extracting images from post: {e}")
+        return downloaded_images
+
+
+def find_photo_gallery_triggers(driver, article_element):
+    """
+    Find clickable elements that open photo galleries in Facebook posts
+
+    Args:
+        driver: Selenium WebDriver instance
+        article_element: WebElement for the article/post
+
+    Returns:
+        list: List of WebElements that can trigger photo galleries (deduplicated)
+    """
+    triggers = []
+
+    try:
+        # Multiple selectors for photo gallery triggers
+        gallery_selectors = [
+            # Photo count indicators like "+5 more photos"
+            ".//div[contains(text(), 'more photo') or contains(text(), '+')]",
+            ".//span[contains(text(), 'more photo') or contains(text(), '+')]",
+
+            # Photo grid containers (multiple photos in a grid)
+            ".//div[contains(@class, 'photoGrid') or contains(@class, 'photo-grid')]",
+            ".//div[contains(@class, 'photoContainer') and count(.//img) > 1]",
+
+            # Clickable photo containers
+            ".//div[@role='button'][.//img]",
+            ".//a[@role='link'][.//img]",
+
+            # Facebook specific photo gallery triggers
+            ".//div[contains(@class, 'uiMediaThumb')]",
+            ".//div[contains(@class, 'scaledImageFitWidth')][@role='button']",
+
+            # Images that are clickable (lead to galleries)
+            ".//img[@role='button' or @tabindex='0']",
+            ".//img[parent::div[@role='button'] or parent::a[@role='link']]",
+        ]
+
+        for selector in gallery_selectors:
+            try:
+                elements = article_element.find_elements(By.XPATH, selector)
+                for element in elements:
+                    if element.is_displayed() and element.is_enabled():
+                        # Check if element might lead to a gallery
+                        if is_likely_gallery_trigger(element):
+                            triggers.append(element)
+            except Exception:
+                continue
+
+    except Exception as e:
+        print(f"❌ Error finding gallery triggers: {e}")
+
+    # Deduplicate triggers that lead to the same gallery
+    unique_triggers = deduplicate_gallery_triggers(triggers)
+
+    if len(triggers) > len(unique_triggers):
+        print(
+            f"🔍 Found {len(triggers)} potential triggers, deduplicated to {len(unique_triggers)} unique galleries")
+
+    return unique_triggers
+
+
+def deduplicate_gallery_triggers(triggers):
+    """
+    Remove duplicate triggers that lead to the same gallery
+
+    Args:
+        triggers: List of WebElements that can trigger galleries
+
+    Returns:
+        list: Deduplicated list of unique gallery triggers
+    """
+    unique_triggers = []
+    seen_locations = set()
+    seen_containers = set()
+
+    for trigger in triggers:
+        try:
+            # Method 1: Check if triggers are in the same container/parent
+            parent_element = trigger.find_element(By.XPATH, "./..")
+            parent_id = id(parent_element)
+
+            if parent_id in seen_containers:
+                print(f"  🔄 Skipping duplicate trigger in same container")
+                continue
+
+            # Method 2: Check location proximity (triggers close together likely same gallery)
+            location = trigger.location
+            # Group by 50px grid
+            location_key = (
+                round(location['x'] / 50) * 50, round(location['y'] / 50) * 50)
+
+            if location_key in seen_locations:
+                print(f"  🔄 Skipping duplicate trigger at similar location")
+                continue
+
+            # Method 3: Check if trigger contains similar text/images
+            trigger_text = trigger.text.lower().strip()
+            trigger_images = trigger.find_elements(By.TAG_NAME, "img")
+
+            # Skip if we already have a trigger with similar characteristics
+            is_duplicate = False
+            for existing_trigger in unique_triggers:
+                try:
+                    existing_text = existing_trigger.text.lower().strip()
+                    existing_images = existing_trigger.find_elements(
+                        By.TAG_NAME, "img")
+
+                    # Check text similarity
+                    if trigger_text and existing_text and trigger_text == existing_text:
+                        is_duplicate = True
+                        break
+
+                    # Check if both have images and similar count
+                    if len(trigger_images) > 0 and len(existing_images) > 0:
+                        if abs(len(trigger_images) - len(existing_images)) <= 1:
+                            # Compare first image source if available
+                            try:
+                                trigger_img_src = trigger_images[0].get_attribute(
+                                    'src')
+                                existing_img_src = existing_images[0].get_attribute(
+                                    'src')
+                                if trigger_img_src and existing_img_src and trigger_img_src == existing_img_src:
+                                    is_duplicate = True
+                                    break
+                            except:
+                                pass
+
+                except Exception:
+                    continue
+
+            if is_duplicate:
+                print(f"  🔄 Skipping duplicate trigger with similar content")
+                continue
+
+            # This trigger seems unique, add it
+            unique_triggers.append(trigger)
+            seen_locations.add(location_key)
+            seen_containers.add(parent_id)
+
+        except Exception as e:
+            # If we can't analyze this trigger, include it to be safe
+            unique_triggers.append(trigger)
+            continue
+
+    return unique_triggers
+
+
+def is_likely_gallery_trigger(element):
+    """
+    Check if element is likely to trigger a photo gallery
+
+    Args:
+        element: WebElement to check
+
+    Returns:
+        bool: True if likely a gallery trigger
+    """
+    try:
+        # Check text content for gallery indicators
+        text = element.text.lower()
+        gallery_indicators = [
+            'more photo', '+', 'photos', 'see all', 'view all',
+            'more images', 'additional', 'others'
+        ]
+
+        for indicator in gallery_indicators:
+            if indicator in text:
+                return True
+
+        # Check if element contains multiple images
+        images = element.find_elements(By.TAG_NAME, "img")
+        if len(images) > 1:
+            return True
+
+        # Check for gallery-related attributes or classes
+        class_name = element.get_attribute("class") or ""
+        gallery_classes = [
+            'photo', 'gallery', 'media', 'grid', 'thumb',
+            'container', 'viewer', 'lightbox'
+        ]
+
+        for gallery_class in gallery_classes:
+            if gallery_class in class_name.lower():
+                return True
+
+        return False
+
+    except Exception:
+        return False
+
+
+def extract_images_from_gallery(driver, gallery_trigger, save_dir="image_downloads"):
+    """
+    Click on gallery trigger and extract all images from the opened gallery
+
+    Args:
+        driver: Selenium WebDriver instance
+        gallery_trigger: WebElement that opens the gallery
+        save_dir: Directory to save images
+
+    Returns:
+        list: List of downloaded image file paths
+    """
+    gallery_images = []
+    start_time = time.time()
+    max_gallery_time = 300  # 5 minutes max per gallery
+
+    try:
+        print("🖱️  Clicking gallery trigger...")
+
+        # Scroll trigger into view and click
+        driver.execute_script(
+            "arguments[0].scrollIntoView({block: 'center'});", gallery_trigger)
+        time.sleep(1)
+
+        # Try to click the trigger
+        try:
+            gallery_trigger.click()
+        except Exception:
+            # Fallback: JavaScript click
+            driver.execute_script("arguments[0].click();", gallery_trigger)
+
+        time.sleep(2)  # Wait for gallery to open
+
+        # Check if photo viewer/modal opened
+        if is_photo_viewer_open(driver):
+            print("📸 Photo viewer opened, extracting images...")
+            gallery_images = navigate_and_extract_gallery_images(
+                driver, save_dir)
+        else:
+            print("⚠️  Photo viewer did not open, trying direct image extraction...")
+            # Fallback: try to extract images from current page
+            gallery_images = extract_visible_images_after_click(
+                driver, save_dir)
+
+        # Check if we've been processing too long
+        elapsed_time = time.time() - start_time
+        if elapsed_time > max_gallery_time:
+            print(
+                f"⏰ Gallery processing timeout ({elapsed_time:.1f}s), stopping")
+
+    except Exception as e:
+        print(f"❌ Error extracting from gallery: {e}")
+
+    return gallery_images
+
+
+def is_photo_viewer_open(driver):
+    """
+    Check if Facebook photo viewer/modal is currently open
+
+    Args:
+        driver: Selenium WebDriver instance
+
+    Returns:
+        bool: True if photo viewer is open
+    """
+    try:
+        # Common selectors for Facebook photo viewer
+        viewer_selectors = [
+            # Facebook photo viewer container
+            "//div[@role='dialog'][.//img]",
+            "//div[@data-testid='photo-viewer']",
+            "//div[contains(@class, 'photoViewer')]",
+
+            # Modal containers with large images
+            "//div[@role='dialog'][contains(@style, 'position') and .//img]",
+            "//div[contains(@class, 'modal') and .//img[@class and string-length(@src) > 50]]",
+
+            # Lightbox indicators
+            "//div[contains(@class, 'lightbox')]",
+            "//div[@aria-modal='true'][.//img]",
+        ]
+
+        for selector in viewer_selectors:
+            elements = driver.find_elements(By.XPATH, selector)
+            if elements:
+                for element in elements:
+                    if element.is_displayed():
+                        return True
+
+        return False
+
+    except Exception:
+        return False
+
+
+def navigate_and_extract_gallery_images(driver, save_dir="image_downloads", max_images=50):
+    """
+    Navigate through Facebook photo gallery and extract all images
+
+    Args:
+        driver: Selenium WebDriver instance
+        save_dir: Directory to save images
+        max_images: Maximum number of images to extract (safety limit)
+
+    Returns:
+        list: List of downloaded image file paths
+    """
+    extracted_images = []
+    seen_images = set()
+    consecutive_failures = 0
+    max_consecutive_failures = 1  # Stop immediately when duplicate detected
+    last_image_url = None
+    start_time = time.time()
+    max_extraction_time = 240  # 4 minutes max for gallery navigation
+
+    try:
+        print("🔄 Navigating through gallery...")
+
+        for i in range(max_images):
+            # Check timeout
+            elapsed_time = time.time() - start_time
+            if elapsed_time > max_extraction_time:
+                print(
+                    f"⏰ Gallery extraction timeout ({elapsed_time:.1f}s), stopping at image {i+1}")
+                break
+
+            print(f"📷 Processing image {i+1}...")
+
+            # Extract current image
+            current_image_url = get_current_gallery_image_url(driver)
+
+            # Check if we got the same image as before (stuck/end)
+            if current_image_url == last_image_url:
+                consecutive_failures += 1
+                print(
+                    f"⚠️  Same image detected ({consecutive_failures}/{max_consecutive_failures})")
+
+                if consecutive_failures >= max_consecutive_failures:
+                    print("📍 Detected end of gallery (same image repeated)")
+                    break
+            else:
+                consecutive_failures = 0  # Reset counter when we get a new image
+                last_image_url = current_image_url
+
+            if current_image_url and current_image_url not in seen_images:
+                seen_images.add(current_image_url)
+
+                # Download current image
+                downloaded_path = download_facebook_image_with_session(
+                    driver, current_image_url, save_dir
+                )
+                if downloaded_path:
+                    extracted_images.append(downloaded_path)
+                    print(
+                        f"  ✅ Downloaded: {os.path.basename(downloaded_path)}")
+                else:
+                    print(
+                        f"  ❌ Failed to download: {current_image_url[:50]}...")
+
+            elif current_image_url in seen_images:
+                print(f"  ⏭️  Already processed this image")
+                consecutive_failures += 1
+                if consecutive_failures >= max_consecutive_failures:
+                    print("📍 Detected circular navigation, ending extraction")
+                    break
+            else:
+                print(f"  ❌ No valid image URL found")
+                consecutive_failures += 1
+                if consecutive_failures >= max_consecutive_failures:
+                    print("📍 No more valid images found, ending extraction")
+                    break
+
+            # If we already detected enough consecutive failures, don't try to navigate further
+            if consecutive_failures >= max_consecutive_failures:
+                print("📍 Stopping navigation due to consecutive failures")
+                break
+
+            # Try to navigate to next image
+            if not go_to_next_gallery_image(driver):
+                print("📍 Reached end of gallery or cannot navigate further")
+                break
+
+            time.sleep(1)  # Wait between navigation
+
+        elapsed_time = time.time() - start_time
+        print(
+            f"✅ Gallery extraction complete: {len(extracted_images)} images in {elapsed_time:.1f}s")
+
+    except Exception as e:
+        print(f"❌ Error navigating gallery: {e}")
+
+    return extracted_images
+
+
+def get_current_gallery_image_url(driver):
+    """
+    Get the URL of currently displayed image in photo viewer
+
+    Args:
+        driver: Selenium WebDriver instance
+
+    Returns:
+        str: Image URL or None
+    """
+    try:
+        # Selectors for the main image in photo viewer
+        image_selectors = [
+            # Facebook photo viewer main image
+            "//div[@role='dialog']//img[contains(@class, 'spotlight') or @data-visualcompletion='media-vc-image']",
+            "//div[@data-testid='photo-viewer']//img",
+            "//div[contains(@class, 'photoViewer')]//img[not(contains(@class, 'thumbnail'))]",
+
+            # Large modal images
+            "//div[@role='dialog']//img[@class and string-length(@src) > 50]",
+            "//div[@aria-modal='true']//img[not(contains(@class, 'icon')) and not(contains(@class, 'emoji'))]",
+
+            # Primary image (largest)
+            "//img[@src and contains(@src, 'scontent') and not(contains(@src, 'emoji'))]",
+        ]
+
+        for selector in image_selectors:
+            try:
+                images = driver.find_elements(By.XPATH, selector)
+
+                # Find the largest/main image
+                main_image = None
+                max_size = 0
+
+                for img in images:
+                    if img.is_displayed():
+                        try:
+                            size = img.size
+                            total_size = size['height'] * size['width']
+                            if total_size > max_size:
+                                max_size = total_size
+                                main_image = img
+                        except:
+                            continue
+
+                if main_image:
+                    src = main_image.get_attribute('src')
+                    if src and is_valid_facebook_content_image(src):
+                        return src
+
+            except Exception:
+                continue
+
+        return None
+
+    except Exception:
+        return None
+
+
+def go_to_next_gallery_image(driver):
+    """
+    Navigate to next image in Facebook photo gallery
+
+    Args:
+        driver: Selenium WebDriver instance
+
+    Returns:
+        bool: True if successfully navigated to next image
+    """
+    try:
+        # Get current image URL before trying to navigate
+        current_image_before = get_current_gallery_image_url(driver)
+
+        # Selectors for next button in photo viewer
+        next_selectors = [
+            # Standard next button
+            "//div[@role='dialog']//div[@role='button'][@aria-label='Next photo' or @aria-label='Next' or @aria-label='다음']",
+            "//button[@aria-label='Next photo' or @aria-label='Next' or @aria-label='다음']",
+
+            # Arrow buttons
+            "//div[@role='dialog']//*[contains(@class, 'next') or contains(@class, 'arrow-right')]",
+            "//div[contains(@class, 'photoViewer')]//*[@role='button'][contains(@aria-label, 'Next')]",
+
+            # Generic navigation - look for clickable elements on the right side
+            "//div[@role='dialog']//div[@role='button'][position() > 1 and contains(@style, 'right')]",
+            "//div[@role='dialog']//div[@role='button'][contains(@aria-label, 'next') or contains(@aria-label, 'Next')]",
+        ]
+
+        navigation_attempted = False
+
+        for selector in next_selectors:
+            try:
+                next_buttons = driver.find_elements(By.XPATH, selector)
+                for button in next_buttons:
+                    if button.is_displayed() and button.is_enabled():
+                        # Check if button is actually clickable (not disabled)
+                        button_classes = button.get_attribute("class") or ""
+                        button_style = button.get_attribute("style") or ""
+
+                        # Skip if button appears disabled
+                        if "disabled" in button_classes.lower() or "opacity: 0" in button_style:
+                            continue
+
+                        # Try to make button clickable by scrolling it into view
+                        try:
+                            # Scroll button into center of view
+                            driver.execute_script(
+                                "arguments[0].scrollIntoView({block: 'center', inline: 'center'});",
+                                button
+                            )
+                            time.sleep(0.5)
+
+                            # Try to remove common Facebook overlays that block clicks
+                            driver.execute_script("""
+                                // Remove common overlay elements that block clicks
+                                var overlays = document.querySelectorAll('.__fb-light-mode, .x1qjc9v5.x9f619, .x78zum5.xdt5ytf');
+                                overlays.forEach(function(overlay) {
+                                    if (overlay.style.zIndex > 1000) {
+                                        overlay.style.zIndex = '1';
+                                    }
+                                });
+                                
+                                // Ensure button is on top
+                                arguments[0].style.zIndex = '9999';
+                                arguments[0].style.position = 'relative';
+                            """, button)
+
+                            # Wait for any overlays to disappear
+                            time.sleep(0.3)
+
+                            # Try normal click first
+                            button.click()
+                            navigation_attempted = True
+                            time.sleep(1)  # Wait for navigation
+
+                            # Check if image actually changed
+                            current_image_after = get_current_gallery_image_url(
+                                driver)
+                            if current_image_after != current_image_before:
+                                return True
+                            else:
+                                # Don't print warning here, will try other methods
+                                pass
+
+                        except Exception as click_error:
+                            # If normal click fails, try JavaScript click
+                            try:
+                                # Only show warning for first failed attempt, not every fallback
+                                if "element click intercepted" in str(click_error) and not navigation_attempted:
+                                    # Suppress verbose click intercepted warnings - this is expected
+                                    pass
+                                else:
+                                    print(
+                                        f"⚠️  Normal click failed, trying JavaScript click: {str(click_error).split(':')[0]}...")
+
+                                driver.execute_script(
+                                    "arguments[0].click();", button)
+                                navigation_attempted = True
+                                time.sleep(1)
+
+                                # Check if navigation worked
+                                current_image_after = get_current_gallery_image_url(
+                                    driver)
+                                if current_image_after != current_image_before:
+                                    return True
+
+                            except Exception as js_error:
+                                # Silent fallback to arrow keys - don't spam console
+                                continue
+
+            except Exception:
+                continue
+
+        # Fallback: try arrow key navigation only if no buttons were found
+        if not navigation_attempted:
+            try:
+                from selenium.webdriver.common.keys import Keys
+                from selenium.webdriver.common.action_chains import ActionChains
+
+                # Try to focus on the photo viewer dialog
+                dialogs = driver.find_elements(
+                    By.XPATH, "//div[@role='dialog']")
+                focused = False
+
+                for dialog in dialogs:
+                    try:
+                        if dialog.is_displayed():
+                            # Click in the center of the dialog to focus it
+                            driver.execute_script(
+                                "arguments[0].focus(); arguments[0].click();",
+                                dialog
+                            )
+                            time.sleep(0.5)
+                            focused = True
+                            break
+                    except:
+                        continue
+
+                if focused:
+                    # Send arrow key to focused dialog
+                    ActionChains(driver).send_keys(Keys.ARROW_RIGHT).perform()
+                    time.sleep(1)
+
+                    # Check if image changed with arrow key
+                    current_image_after = get_current_gallery_image_url(driver)
+                    if current_image_after != current_image_before:
+                        return True
+                    else:
+                        print("⚠️  Arrow key navigation didn't change image")
+                else:
+                    print("⚠️  Could not focus dialog for arrow key navigation")
+
+            except Exception as key_error:
+                print(f"⚠️  Arrow key navigation failed: {key_error}")
+
+        # If we reach here, navigation failed
+        print("❌ All navigation methods failed")
+        return False
+
+    except Exception as e:
+        print(f"❌ Error in navigation: {e}")
+        return False
+
+
+def close_photo_viewer(driver):
+    """
+    Close Facebook photo viewer/modal
+
+    Args:
+        driver: Selenium WebDriver instance
+
+    Returns:
+        bool: True if successfully closed
+    """
+    try:
+        # Selectors for close button
+        close_selectors = [
+            "//div[@role='dialog']//div[@aria-label='Close' or @aria-label='닫기']",
+            "//button[@aria-label='Close' or @aria-label='닫기']",
+            "//div[@role='dialog']//*[text()='×' or text()='✕']",
+            "//div[contains(@class, 'close')][@role='button']",
+        ]
+
+        for selector in close_selectors:
+            try:
+                close_buttons = driver.find_elements(By.XPATH, selector)
+                for button in close_buttons:
+                    if button.is_displayed() and button.is_enabled():
+                        button.click()
+                        time.sleep(1)
+                        return True
+            except Exception:
+                continue
+
+        # Fallback: ESC key
+        try:
+            from selenium.webdriver.common.keys import Keys
+            from selenium.webdriver.common.action_chains import ActionChains
+
+            ActionChains(driver).send_keys(Keys.ESCAPE).perform()
+            time.sleep(1)
+            return True
+        except Exception:
+            pass
+
+        return False
+
+    except Exception:
+        return False
+
+
+def extract_visible_images_from_post(driver, article_element):
+    """
+    Extract visible images from Facebook post (non-gallery images)
+
+    Args:
+        driver: Selenium WebDriver instance
+        article_element: WebElement for the article
+
+    Returns:
+        list: List of image URLs
+    """
+    images = []
+
+    try:
+        # Find visible images in the post
+        img_elements = article_element.find_elements(By.TAG_NAME, "img")
+
+        for img in img_elements:
+            if img.is_displayed():
+                src = img.get_attribute('src')
+                if src and is_valid_facebook_content_image(src):
+                    images.append(src)
+
+                # Also check data-src for lazy loaded images
+                data_src = img.get_attribute('data-src')
+                if data_src and is_valid_facebook_content_image(data_src):
+                    images.append(data_src)
+
+    except Exception as e:
+        print(f"❌ Error extracting visible images: {e}")
+
+    return list(dict.fromkeys(images))  # Remove duplicates
+
+
+def extract_visible_images_after_click(driver, save_dir):
+    """
+    Extract images from page after clicking (fallback when modal doesn't open)
+
+    Args:
+        driver: Selenium WebDriver instance
+        save_dir: Directory to save images
+
+    Returns:
+        list: List of downloaded image file paths
+    """
+    downloaded_images = []
+
+    try:
+        # Wait for page to update after click
+        time.sleep(2)
+
+        # Find all images on current page
+        all_images = driver.find_elements(By.TAG_NAME, "img")
+
+        for img in all_images:
+            if img.is_displayed():
+                src = img.get_attribute('src')
+                if src and is_valid_facebook_content_image(src):
+                    downloaded_path = download_facebook_image_with_session(
+                        driver, src, save_dir)
+                    if downloaded_path:
+                        downloaded_images.append(downloaded_path)
+
+    except Exception as e:
+        print(f"❌ Error in fallback image extraction: {e}")
+
+    return downloaded_images
+
+
+def is_valid_facebook_content_image(url):
+    """
+    Check if URL is a valid Facebook content image (not emoji/icon)
+
+    Args:
+        url: Image URL to validate
+
+    Returns:
+        bool: True if valid content image
+    """
+    if not url or len(url) < 20:
+        return False
+
+    # Must be from Facebook content domains
+    valid_domains = [
+        'scontent.com',
+        'scontent-',
+        'scontent.',
+        'fbcdn.net',
+        'cdninstagram.com'
+    ]
+
+    # Skip UI elements and emoji
+    skip_patterns = [
+        'emoji', 'icon', 'static', 'rsrc.php', '_16x16', '_20x20', '_24x24', '_32x32',
+        'blank.gif', 'spacer.gif', '1x1', 'pixel.png'
+    ]
+
+    for pattern in skip_patterns:
+        if pattern in url.lower():
+            return False
+
+    return any(domain in url for domain in valid_domains)
+
+
+def download_facebook_image_with_session(driver, img_url, save_dir="image_downloads"):
+    """
+    Download Facebook image using Selenium session cookies
+
+    Args:
+        driver: Selenium WebDriver instance
+        img_url: Image URL to download
+        save_dir: Directory to save image
+
+    Returns:
+        str: Local file path or None if failed
+    """
+    try:
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+
+        # Get cookies from Selenium session
+        cookies = driver.get_cookies()
+        session = requests.Session()
+
+        # Transfer cookies
+        for cookie in cookies:
+            session.cookies.set(
+                cookie['name'],
+                cookie['value'],
+                domain=cookie.get('domain')
+            )
+
+        # Set headers
+        headers = {
+            'User-Agent': driver.execute_script("return navigator.userAgent;"),
+            'Referer': 'https://www.facebook.com/',
+            'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
+        }
+
+        response = session.get(img_url, headers=headers,
+                               stream=True, timeout=30)
+
+        if response.status_code == 200:
+            # Generate filename
+            url_hash = hashlib.md5(img_url.encode()).hexdigest()[:12]
+
+            # Determine file extension
+            content_type = response.headers.get('content-type', '')
+            if 'jpeg' in content_type or 'jpg' in content_type:
+                ext = '.jpg'
+            elif 'png' in content_type:
+                ext = '.png'
+            elif 'webp' in content_type:
+                ext = '.webp'
+            else:
+                ext = '.jpg'  # Default
+
+            filename = f"fb_gallery_{url_hash}{ext}"
+            filepath = os.path.join(save_dir, filename)
+
+            # Save image
+            with open(filepath, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+
+            return filepath
+        else:
+            print(f"❌ HTTP {response.status_code}: {img_url[:50]}...")
+            return None
+
+    except Exception as e:
+        print(f"❌ Download error: {e}")
+        return None
+
+
 if __name__ == "__main__":
     # Test the media extraction functions
     print("🖼️  Testing image URL cleaning and filtering:")
@@ -670,19 +1253,3 @@ if __name__ == "__main__":
         cleaned = clean_image_url(img)
         valid = is_valid_image_url(cleaned) if cleaned else False
         print(f"  '{img[:60]}...' → Valid: {valid}")
-
-    print("\n🎥 Testing video URL normalization:")
-    test_videos = [
-        "https://www.facebook.com/61561110231062/videos/1790230575171441/?__cft__[0]=AZUf0Reb",
-        "https://www.facebook.com/61561110231062/videos/1790230575171441/?__tn__=%2CO%2CP-R",
-        "/videos/123456/",
-        "https://facebook.com/watch/456789",
-    ]
-
-    for video in test_videos:
-        cleaned = clean_video_url(video)
-        normalized = normalize_video_url(cleaned) if cleaned else None
-        valid = is_valid_video_url(normalized) if normalized else False
-        print(f"  Original: {video[:60]}...")
-        print(f"  Normalized: {normalized} (valid: {valid})")
-        print()
