@@ -10,6 +10,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, WebDriverException
+import time
 
 
 def extract_images_from_article(article):
@@ -651,6 +652,652 @@ def dismiss_facebook_popup(driver):
     except Exception as e:
         print(f"❌ Error dismissing popup: {e}")
         return False
+
+
+def extract_all_images_from_facebook_post(driver, article_element, save_dir="image_downloads"):
+    """
+    Extract ALL images from Facebook post by clicking through photo galleries
+
+    Args:
+        driver: Selenium WebDriver instance
+        article_element: WebElement for the article/post
+        save_dir: Directory to save images
+
+    Returns:
+        list: List of downloaded image file paths
+    """
+    downloaded_images = []
+
+    try:
+        print("🔍 Looking for photo galleries in post...")
+
+        # First extract any directly visible images
+        visible_images = extract_visible_images_from_post(
+            driver, article_element)
+        if visible_images:
+            print(f"📷 Found {len(visible_images)} directly visible images")
+            # Download visible images
+            for img_url in visible_images:
+                downloaded_path = download_facebook_image_with_session(
+                    driver, img_url, save_dir)
+                if downloaded_path:
+                    downloaded_images.append(downloaded_path)
+
+        # Look for photo gallery triggers (multiple photos indicator)
+        gallery_triggers = find_photo_gallery_triggers(driver, article_element)
+
+        if gallery_triggers:
+            print(
+                f"🖼️  Found {len(gallery_triggers)} photo gallery trigger(s)")
+
+            for i, trigger in enumerate(gallery_triggers):
+                print(f"📂 Processing gallery {i+1}/{len(gallery_triggers)}")
+                gallery_images = extract_images_from_gallery(
+                    driver, trigger, save_dir)
+                downloaded_images.extend(gallery_images)
+
+                # Close gallery/modal after extraction
+                close_photo_viewer(driver)
+                time.sleep(1)
+        else:
+            print("ℹ️  No photo galleries found in this post")
+
+    except Exception as e:
+        print(f"❌ Error extracting all images: {e}")
+
+    # Remove duplicates
+    unique_images = list(dict.fromkeys(downloaded_images))
+    print(f"✅ Total unique images extracted: {len(unique_images)}")
+
+    return unique_images
+
+
+def find_photo_gallery_triggers(driver, article_element):
+    """
+    Find clickable elements that open photo galleries in Facebook posts
+
+    Args:
+        driver: Selenium WebDriver instance
+        article_element: WebElement for the article/post
+
+    Returns:
+        list: List of WebElements that can trigger photo galleries
+    """
+    triggers = []
+
+    try:
+        # Multiple selectors for photo gallery triggers
+        gallery_selectors = [
+            # Photo count indicators like "+5 more photos"
+            ".//div[contains(text(), 'more photo') or contains(text(), '+')]",
+            ".//span[contains(text(), 'more photo') or contains(text(), '+')]",
+
+            # Photo grid containers (multiple photos in a grid)
+            ".//div[contains(@class, 'photoGrid') or contains(@class, 'photo-grid')]",
+            ".//div[contains(@class, 'photoContainer') and count(.//img) > 1]",
+
+            # Clickable photo containers
+            ".//div[@role='button'][.//img]",
+            ".//a[@role='link'][.//img]",
+
+            # Facebook specific photo gallery triggers
+            ".//div[contains(@class, 'uiMediaThumb')]",
+            ".//div[contains(@class, 'scaledImageFitWidth')][@role='button']",
+
+            # Images that are clickable (lead to galleries)
+            ".//img[@role='button' or @tabindex='0']",
+            ".//img[parent::div[@role='button'] or parent::a[@role='link']]",
+        ]
+
+        for selector in gallery_selectors:
+            try:
+                elements = article_element.find_elements(By.XPATH, selector)
+                for element in elements:
+                    if element.is_displayed() and element.is_enabled():
+                        # Check if element might lead to a gallery
+                        if is_likely_gallery_trigger(element):
+                            triggers.append(element)
+            except Exception:
+                continue
+
+    except Exception as e:
+        print(f"❌ Error finding gallery triggers: {e}")
+
+    # Remove duplicates
+    unique_triggers = []
+    seen_locations = set()
+
+    for trigger in triggers:
+        try:
+            location = (trigger.location['x'], trigger.location['y'])
+            if location not in seen_locations:
+                seen_locations.add(location)
+                unique_triggers.append(trigger)
+        except:
+            continue
+
+    return unique_triggers
+
+
+def is_likely_gallery_trigger(element):
+    """
+    Check if element is likely to trigger a photo gallery
+
+    Args:
+        element: WebElement to check
+
+    Returns:
+        bool: True if likely a gallery trigger
+    """
+    try:
+        # Check text content for gallery indicators
+        text = element.text.lower()
+        gallery_indicators = [
+            'more photo', '+', 'photos', 'see all', 'view all',
+            'more images', 'additional', 'others'
+        ]
+
+        for indicator in gallery_indicators:
+            if indicator in text:
+                return True
+
+        # Check if element contains multiple images
+        images = element.find_elements(By.TAG_NAME, "img")
+        if len(images) > 1:
+            return True
+
+        # Check for gallery-related attributes or classes
+        class_name = element.get_attribute("class") or ""
+        gallery_classes = [
+            'photo', 'gallery', 'media', 'grid', 'thumb',
+            'container', 'viewer', 'lightbox'
+        ]
+
+        for gallery_class in gallery_classes:
+            if gallery_class in class_name.lower():
+                return True
+
+        return False
+
+    except Exception:
+        return False
+
+
+def extract_images_from_gallery(driver, gallery_trigger, save_dir="image_downloads"):
+    """
+    Click on gallery trigger and extract all images from the opened gallery
+
+    Args:
+        driver: Selenium WebDriver instance
+        gallery_trigger: WebElement that opens the gallery
+        save_dir: Directory to save images
+
+    Returns:
+        list: List of downloaded image file paths
+    """
+    gallery_images = []
+
+    try:
+        print("🖱️  Clicking gallery trigger...")
+
+        # Scroll trigger into view and click
+        driver.execute_script(
+            "arguments[0].scrollIntoView({block: 'center'});", gallery_trigger)
+        time.sleep(1)
+
+        # Try to click the trigger
+        try:
+            gallery_trigger.click()
+        except Exception:
+            # Fallback: JavaScript click
+            driver.execute_script("arguments[0].click();", gallery_trigger)
+
+        time.sleep(2)  # Wait for gallery to open
+
+        # Check if photo viewer/modal opened
+        if is_photo_viewer_open(driver):
+            print("📸 Photo viewer opened, extracting images...")
+            gallery_images = navigate_and_extract_gallery_images(
+                driver, save_dir)
+        else:
+            print("⚠️  Photo viewer did not open, trying direct image extraction...")
+            # Fallback: try to extract images from current page
+            gallery_images = extract_visible_images_after_click(
+                driver, save_dir)
+
+    except Exception as e:
+        print(f"❌ Error extracting from gallery: {e}")
+
+    return gallery_images
+
+
+def is_photo_viewer_open(driver):
+    """
+    Check if Facebook photo viewer/modal is currently open
+
+    Args:
+        driver: Selenium WebDriver instance
+
+    Returns:
+        bool: True if photo viewer is open
+    """
+    try:
+        # Common selectors for Facebook photo viewer
+        viewer_selectors = [
+            # Facebook photo viewer container
+            "//div[@role='dialog'][.//img]",
+            "//div[@data-testid='photo-viewer']",
+            "//div[contains(@class, 'photoViewer')]",
+
+            # Modal containers with large images
+            "//div[@role='dialog'][contains(@style, 'position') and .//img]",
+            "//div[contains(@class, 'modal') and .//img[@class and string-length(@src) > 50]]",
+
+            # Lightbox indicators
+            "//div[contains(@class, 'lightbox')]",
+            "//div[@aria-modal='true'][.//img]",
+        ]
+
+        for selector in viewer_selectors:
+            elements = driver.find_elements(By.XPATH, selector)
+            if elements:
+                for element in elements:
+                    if element.is_displayed():
+                        return True
+
+        return False
+
+    except Exception:
+        return False
+
+
+def navigate_and_extract_gallery_images(driver, save_dir="image_downloads", max_images=50):
+    """
+    Navigate through Facebook photo gallery and extract all images
+
+    Args:
+        driver: Selenium WebDriver instance
+        save_dir: Directory to save images
+        max_images: Maximum number of images to extract (safety limit)
+
+    Returns:
+        list: List of downloaded image file paths
+    """
+    extracted_images = []
+    seen_images = set()
+
+    try:
+        print("🔄 Navigating through gallery...")
+
+        for i in range(max_images):
+            print(f"📷 Processing image {i+1}...")
+
+            # Extract current image
+            current_image_url = get_current_gallery_image_url(driver)
+
+            if current_image_url and current_image_url not in seen_images:
+                seen_images.add(current_image_url)
+
+                # Download current image
+                downloaded_path = download_facebook_image_with_session(
+                    driver, current_image_url, save_dir
+                )
+                if downloaded_path:
+                    extracted_images.append(downloaded_path)
+                    print(
+                        f"  ✅ Downloaded: {os.path.basename(downloaded_path)}")
+                else:
+                    print(
+                        f"  ❌ Failed to download: {current_image_url[:50]}...")
+
+            # Try to navigate to next image
+            if not go_to_next_gallery_image(driver):
+                print("📍 Reached end of gallery or cannot navigate further")
+                break
+
+            time.sleep(1)  # Wait between navigation
+
+        print(f"✅ Gallery extraction complete: {len(extracted_images)} images")
+
+    except Exception as e:
+        print(f"❌ Error navigating gallery: {e}")
+
+    return extracted_images
+
+
+def get_current_gallery_image_url(driver):
+    """
+    Get the URL of currently displayed image in photo viewer
+
+    Args:
+        driver: Selenium WebDriver instance
+
+    Returns:
+        str: Image URL or None
+    """
+    try:
+        # Selectors for the main image in photo viewer
+        image_selectors = [
+            # Facebook photo viewer main image
+            "//div[@role='dialog']//img[contains(@class, 'spotlight') or @data-visualcompletion='media-vc-image']",
+            "//div[@data-testid='photo-viewer']//img",
+            "//div[contains(@class, 'photoViewer')]//img[not(contains(@class, 'thumbnail'))]",
+
+            # Large modal images
+            "//div[@role='dialog']//img[@class and string-length(@src) > 50]",
+            "//div[@aria-modal='true']//img[not(contains(@class, 'icon')) and not(contains(@class, 'emoji'))]",
+
+            # Primary image (largest)
+            "//img[@src and contains(@src, 'scontent') and not(contains(@src, 'emoji'))]",
+        ]
+
+        for selector in image_selectors:
+            try:
+                images = driver.find_elements(By.XPATH, selector)
+
+                # Find the largest/main image
+                main_image = None
+                max_size = 0
+
+                for img in images:
+                    if img.is_displayed():
+                        try:
+                            size = img.size
+                            total_size = size['height'] * size['width']
+                            if total_size > max_size:
+                                max_size = total_size
+                                main_image = img
+                        except:
+                            continue
+
+                if main_image:
+                    src = main_image.get_attribute('src')
+                    if src and is_valid_facebook_content_image(src):
+                        return src
+
+            except Exception:
+                continue
+
+        return None
+
+    except Exception:
+        return None
+
+
+def go_to_next_gallery_image(driver):
+    """
+    Navigate to next image in Facebook photo gallery
+
+    Args:
+        driver: Selenium WebDriver instance
+
+    Returns:
+        bool: True if successfully navigated to next image
+    """
+    try:
+        # Selectors for next button in photo viewer
+        next_selectors = [
+            # Standard next button
+            "//div[@role='dialog']//div[@role='button'][@aria-label='Next' or @aria-label='다음']",
+            "//button[@aria-label='Next' or @aria-label='다음']",
+
+            # Arrow buttons
+            "//div[@role='dialog']//*[contains(@class, 'next') or contains(@class, 'arrow-right')]",
+            "//div[contains(@class, 'photoViewer')]//*[@role='button'][contains(@aria-label, 'Next')]",
+
+            # Generic navigation
+            "//div[@role='dialog']//*[@role='button'][position() > 1]",
+        ]
+
+        for selector in next_selectors:
+            try:
+                next_buttons = driver.find_elements(By.XPATH, selector)
+                for button in next_buttons:
+                    if button.is_displayed() and button.is_enabled():
+                        button.click()
+                        time.sleep(1)  # Wait for next image to load
+                        return True
+            except Exception:
+                continue
+
+        # Fallback: try arrow key navigation
+        try:
+            from selenium.webdriver.common.keys import Keys
+            from selenium.webdriver.common.action_chains import ActionChains
+
+            ActionChains(driver).send_keys(Keys.ARROW_RIGHT).perform()
+            time.sleep(1)
+            return True
+        except Exception:
+            pass
+
+        return False
+
+    except Exception:
+        return False
+
+
+def close_photo_viewer(driver):
+    """
+    Close Facebook photo viewer/modal
+
+    Args:
+        driver: Selenium WebDriver instance
+
+    Returns:
+        bool: True if successfully closed
+    """
+    try:
+        # Selectors for close button
+        close_selectors = [
+            "//div[@role='dialog']//div[@aria-label='Close' or @aria-label='닫기']",
+            "//button[@aria-label='Close' or @aria-label='닫기']",
+            "//div[@role='dialog']//*[text()='×' or text()='✕']",
+            "//div[contains(@class, 'close')][@role='button']",
+        ]
+
+        for selector in close_selectors:
+            try:
+                close_buttons = driver.find_elements(By.XPATH, selector)
+                for button in close_buttons:
+                    if button.is_displayed() and button.is_enabled():
+                        button.click()
+                        time.sleep(1)
+                        return True
+            except Exception:
+                continue
+
+        # Fallback: ESC key
+        try:
+            from selenium.webdriver.common.keys import Keys
+            from selenium.webdriver.common.action_chains import ActionChains
+
+            ActionChains(driver).send_keys(Keys.ESCAPE).perform()
+            time.sleep(1)
+            return True
+        except Exception:
+            pass
+
+        return False
+
+    except Exception:
+        return False
+
+
+def extract_visible_images_from_post(driver, article_element):
+    """
+    Extract visible images from Facebook post (non-gallery images)
+
+    Args:
+        driver: Selenium WebDriver instance
+        article_element: WebElement for the article
+
+    Returns:
+        list: List of image URLs
+    """
+    images = []
+
+    try:
+        # Find visible images in the post
+        img_elements = article_element.find_elements(By.TAG_NAME, "img")
+
+        for img in img_elements:
+            if img.is_displayed():
+                src = img.get_attribute('src')
+                if src and is_valid_facebook_content_image(src):
+                    images.append(src)
+
+                # Also check data-src for lazy loaded images
+                data_src = img.get_attribute('data-src')
+                if data_src and is_valid_facebook_content_image(data_src):
+                    images.append(data_src)
+
+    except Exception as e:
+        print(f"❌ Error extracting visible images: {e}")
+
+    return list(dict.fromkeys(images))  # Remove duplicates
+
+
+def extract_visible_images_after_click(driver, save_dir):
+    """
+    Extract images from page after clicking (fallback when modal doesn't open)
+
+    Args:
+        driver: Selenium WebDriver instance
+        save_dir: Directory to save images
+
+    Returns:
+        list: List of downloaded image file paths
+    """
+    downloaded_images = []
+
+    try:
+        # Wait for page to update after click
+        time.sleep(2)
+
+        # Find all images on current page
+        all_images = driver.find_elements(By.TAG_NAME, "img")
+
+        for img in all_images:
+            if img.is_displayed():
+                src = img.get_attribute('src')
+                if src and is_valid_facebook_content_image(src):
+                    downloaded_path = download_facebook_image_with_session(
+                        driver, src, save_dir)
+                    if downloaded_path:
+                        downloaded_images.append(downloaded_path)
+
+    except Exception as e:
+        print(f"❌ Error in fallback image extraction: {e}")
+
+    return downloaded_images
+
+
+def is_valid_facebook_content_image(url):
+    """
+    Check if URL is a valid Facebook content image (not emoji/icon)
+
+    Args:
+        url: Image URL to validate
+
+    Returns:
+        bool: True if valid content image
+    """
+    if not url or len(url) < 20:
+        return False
+
+    # Must be from Facebook content domains
+    valid_domains = [
+        'scontent.com',
+        'scontent-',
+        'scontent.',
+        'fbcdn.net',
+        'cdninstagram.com'
+    ]
+
+    # Skip UI elements and emoji
+    skip_patterns = [
+        'emoji', 'icon', 'static', 'rsrc.php', '_16x16', '_20x20', '_24x24', '_32x32',
+        'blank.gif', 'spacer.gif', '1x1', 'pixel.png'
+    ]
+
+    for pattern in skip_patterns:
+        if pattern in url.lower():
+            return False
+
+    return any(domain in url for domain in valid_domains)
+
+
+def download_facebook_image_with_session(driver, img_url, save_dir="image_downloads"):
+    """
+    Download Facebook image using Selenium session cookies
+
+    Args:
+        driver: Selenium WebDriver instance
+        img_url: Image URL to download
+        save_dir: Directory to save image
+
+    Returns:
+        str: Local file path or None if failed
+    """
+    try:
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+
+        # Get cookies from Selenium session
+        cookies = driver.get_cookies()
+        session = requests.Session()
+
+        # Transfer cookies
+        for cookie in cookies:
+            session.cookies.set(
+                cookie['name'],
+                cookie['value'],
+                domain=cookie.get('domain')
+            )
+
+        # Set headers
+        headers = {
+            'User-Agent': driver.execute_script("return navigator.userAgent;"),
+            'Referer': 'https://www.facebook.com/',
+            'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
+        }
+
+        response = session.get(img_url, headers=headers,
+                               stream=True, timeout=30)
+
+        if response.status_code == 200:
+            # Generate filename
+            url_hash = hashlib.md5(img_url.encode()).hexdigest()[:12]
+
+            # Determine file extension
+            content_type = response.headers.get('content-type', '')
+            if 'jpeg' in content_type or 'jpg' in content_type:
+                ext = '.jpg'
+            elif 'png' in content_type:
+                ext = '.png'
+            elif 'webp' in content_type:
+                ext = '.webp'
+            else:
+                ext = '.jpg'  # Default
+
+            filename = f"fb_gallery_{url_hash}{ext}"
+            filepath = os.path.join(save_dir, filename)
+
+            # Save image
+            with open(filepath, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+
+            return filepath
+        else:
+            print(f"❌ HTTP {response.status_code}: {img_url[:50]}...")
+            return None
+
+    except Exception as e:
+        print(f"❌ Download error: {e}")
+        return None
 
 
 if __name__ == "__main__":

@@ -164,15 +164,54 @@ class FacebookHashtagSpider(scrapy.Spider):
                 actual_timestamp = datetime.now(timezone.utc)
 
         if article_url and description:
-            # Use screenshot as primary "image" instead of extracting individual images
-            if screenshot_path:
-                # Screenshot contains all visual content
-                images = [screenshot_path]
-                print(f"📸 Using screenshot: {screenshot_path}")
+            # Extract ALL images including hidden gallery images
+            driver = response.request.meta.get('driver')
+            images = []
+
+            if driver:
+                # Convert Scrapy selector to WebElement for advanced image extraction
+                try:
+                    # Find the corresponding WebElement for this article
+                    web_articles = driver.find_elements(
+                        By.XPATH, "//div[@role='article']")
+                    article_index = self.get_article_index(article, response)
+
+                    if 0 <= article_index < len(web_articles):
+                        article_web_element = web_articles[article_index]
+
+                        # Use new comprehensive image extraction
+                        from .media_extractor import extract_all_images_from_facebook_post
+                        downloaded_paths = extract_all_images_from_facebook_post(
+                            driver, article_web_element, save_dir="image_downloads"
+                        )
+                        images.extend(downloaded_paths)
+
+                        print(
+                            f"🎯 Extracted {len(downloaded_paths)} images from post (including galleries)")
+                    else:
+                        print(
+                            f"⚠️  Could not find WebElement for article {article_index}")
+                        # Fallback to traditional image extraction
+                        images = extract_images_from_article(article)
+                        print(
+                            f"🔍 Fallback: extracted {len(images)} individual images")
+
+                except Exception as e:
+                    print(f"❌ Error in advanced image extraction: {e}")
+                    # Fallback to traditional image extraction
+                    images = extract_images_from_article(article)
+                    print(
+                        f"🔍 Fallback: extracted {len(images)} individual images")
             else:
-                # Fallback to traditional image extraction if no screenshot
+                # Fallback to traditional image extraction if no driver
                 images = extract_images_from_article(article)
-                print(f"🔍 Fallback: extracted {len(images)} individual images")
+                print(
+                    f"🔍 No driver available: extracted {len(images)} individual images")
+
+            # Also add screenshot as backup
+            if screenshot_path:
+                images.append(screenshot_path)
+                print(f"📸 Added screenshot: {screenshot_path}")
 
             print(
                 f"✓ Crawled: {self.keyword} | Content: {description[:50]}... | Images: {len(images)}")
@@ -185,6 +224,52 @@ class FacebookHashtagSpider(scrapy.Spider):
                     MockFacebook.content.name: description,
                     MockFacebook.images.name: images,
                 })
+
+    def get_article_index(self, scrapy_article, response):
+        """
+        Find the index of Scrapy article selector in the list of all articles
+
+        Args:
+            scrapy_article: Scrapy selector for the article
+            response: Scrapy response object
+
+        Returns:
+            int: Index of the article or -1 if not found
+        """
+        try:
+            # Get all articles from the response
+            all_articles = response.xpath(self.articles_xpath)
+
+            # Try to find matching article by comparing some unique attributes
+            for i, article in enumerate(all_articles):
+                # Compare article content or URLs to find the match
+                try:
+                    # Compare URLs as unique identifier
+                    current_urls = article.xpath(
+                        ".//a[contains(@href, '/posts/') or contains(@href, '/photo/')]/@href").getall()
+                    target_urls = scrapy_article.xpath(
+                        ".//a[contains(@href, '/posts/') or contains(@href, '/photo/')]/@href").getall()
+
+                    if current_urls and target_urls and current_urls[0] == target_urls[0]:
+                        return i
+
+                    # Fallback: compare text content
+                    current_text = ' '.join(article.xpath(
+                        ".//text()").getall()[:10])  # First 10 text nodes
+                    target_text = ' '.join(
+                        scrapy_article.xpath(".//text()").getall()[:10])
+
+                    if current_text and target_text and current_text == target_text:
+                        return i
+
+                except Exception:
+                    continue
+
+            return -1  # Not found
+
+        except Exception as e:
+            print(f"❌ Error finding article index: {e}")
+            return -1
 
 
 class SimpleSeleniumMiddleware:
@@ -268,6 +353,7 @@ class FacebookCrawler:
             logging.info("✅ Crawl completed!")
         except Exception as e:
             logging.error(f"❌ Error: {e}")
+
 
 # =========================================
 # Fire entrypoint
