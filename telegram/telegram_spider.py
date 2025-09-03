@@ -4,6 +4,7 @@ import logging
 import asyncio
 from telethon import TelegramClient
 from telethon.tl.types import MessageMediaPhoto, MessageMediaDocument
+from tqdm import tqdm
 
 # ====== LOGGING ======
 logging.basicConfig(
@@ -32,20 +33,23 @@ class TelegramCrawler:
         JSON_FILENAME = os.path.join(OUTPUT_FOLDER, f"{safe_channel}_datas.json")
 
         existing_messages = []
+        messages_data = []
         existing_ids = set()
+
         if os.path.exists(JSON_FILENAME):
             with open(JSON_FILENAME, "r", encoding="utf-8") as f:
                 existing_messages = json.load(f)
                 existing_ids = {msg["id"] for msg in existing_messages}
             logging.info(f"Loaded {len(existing_messages)} existing messages from {JSON_FILENAME}")
 
-        messages_data = []
 
         def save_progress():
             all_messages = existing_messages + messages_data
             with open(JSON_FILENAME, "w", encoding="utf-8") as f:
                 json.dump(all_messages, f, indent=2, ensure_ascii=False)
-            logging.info(f"💾 Saved {len(all_messages)} messages total")
+
+            if len(messages_data) > 0:
+                logging.info(f"💾 Saved {len(messages_data)} new messages")
 
         async def process_message(message):
             if message.id in existing_ids:
@@ -55,19 +59,35 @@ class TelegramCrawler:
                 "id": message.id,
                 "date": str(message.date),
                 "text": message.text,
-                "sender_id": message.sender_id,
                 "media_type": None,
                 "media_path": None
             }
 
+            # --- helper: tqdm bar for file download ---
+            def make_progress_bar(desc, total):
+                bar = tqdm(total=total, unit="B", unit_scale=True, desc=desc, leave=False)
+
+                def progress_callback(current, _total):
+                    bar.update(current - bar.n)
+                    if current >= total:
+                        bar.close()
+
+                return progress_callback
+
+            # --- photo ---
             if isinstance(message.media, MessageMediaPhoto):
                 msg_dict["media_type"] = "photo"
                 file_path = os.path.join(channel_media_folder, f"{message.id}.jpg")
-                await client.download_media(message, file=file_path)
+
+                total = getattr(message.media.photo, "sizes", [None])[-1]
+                size = getattr(total, "size", 0) or None
+
+                progress_cb = make_progress_bar(f"Downloading photo {message.id}", size) if size else None
+                await client.download_media(message, file=file_path, progress_callback=progress_cb)
                 msg_dict["media_path"] = file_path
 
+            # --- document ---
             elif isinstance(message.media, MessageMediaDocument):
-                # Try to detect extension from mime_type
                 ext = ".bin"
                 if message.media.document and message.media.document.mime_type:
                     mime = message.media.document.mime_type
@@ -84,11 +104,14 @@ class TelegramCrawler:
 
                 msg_dict["media_type"] = "document"
                 file_path = os.path.join(channel_media_folder, f"{message.id}{ext}")
-                await client.download_media(message, file=file_path)
+
+                size = getattr(message.media.document, "size", 0) or None
+                progress_cb = make_progress_bar(f"Downloading doc {message.id}", size) if size else None
+                await client.download_media(message, file=file_path, progress_callback=progress_cb)
                 msg_dict["media_path"] = file_path
 
             messages_data.append(msg_dict)
-            save_progress()  # ✅ save immediately after every message
+            save_progress()
 
         if limit is None:
             offset_id = 0
@@ -108,6 +131,8 @@ class TelegramCrawler:
         else:
             async for message in client.iter_messages(channel, limit=limit):
                 await process_message(message)
+            logging.info(f"📥 Crawled {limit} lastest messages")
+
 
         logging.info("✅ Crawl finished.")
 
@@ -120,4 +145,8 @@ class SpiderCrawler:
         """Crawl Telegram"""
         TelegramCrawler().crawl(channel=channel, limit=limit)
 
+
+## sender_id is redundant, since in a channel, only the founder can send message
+
+## if json file is open while crawling -> cannot override and raise error, also stop crawling process
 

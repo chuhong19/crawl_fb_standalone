@@ -21,6 +21,9 @@ Pillow>=10.0.0
 # Timezone handling
 pytz>=2023.3
 
+# Progress bar
+tqdm==4.67.1
+
 # Optional: For better development experience
 ipython>=8.0.0
 jupyter>=1.0.0
