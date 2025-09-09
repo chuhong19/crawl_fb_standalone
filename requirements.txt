@@ -3,7 +3,7 @@ fire >= 0.7.1
 
 # Core web scraping
 scrapy>=2.11.0
-selenium>=4.15.0
+selenium<4
 
 # WebDriver management
 webdriver-manager>=4.0.0
@@ -28,6 +28,8 @@ tqdm==4.67.1
 ipython>=8.0.0
 jupyter>=1.0.0
 requests<=2.32.5
+scrapy_selenium==0.0.7
+urllib3<2
 
 # Tiktok Video Handler
 yt-dlp>=2025.8.0,<2026.0.0

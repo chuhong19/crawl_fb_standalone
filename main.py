@@ -1,6 +1,5 @@
 import fire
 from twitter.twitter_spider import TwitterCrawler
-from tiktok.tiktok_spider import TikTokCrawler
 from telegram.telegram_spider import TelegramCrawler
 from facebook.facebook_spider import FacebookPageCrawler
 
@@ -9,10 +8,6 @@ class SpiderCrawler:
     def twitter(self, profile=None, hashtag=None, limit=None):
         """Crawl Twitter"""
         TwitterCrawler().crawl(profile=profile, hashtag=hashtag, limit=limit)
-
-    def tiktok(self, profile=None, hashtag=None, limit=None):
-        """Crawl TikTok"""
-        TikTokCrawler().crawl(profile=profile, hashtag=hashtag, limit=limit)
 
     def telegram(self, channel=None, limit=None):
         """Crawl Telegram"""
